@@ -38,6 +38,16 @@ sont doublés — aucun accès réseau.
 .venv/bin/python -m pytest tests
 ```
 
+## Synchroniser la base locale depuis la prod
+
+```bash
+# créer .env.prod (jamais committé) : DATABASE_URL=<url Neon>
+./scripts/sync-db-depuis-prod.sh
+```
+
+Écrase le contenu de la base locale avec un dump de la base de prod (Neon).
+À lancer à la demande — jamais automatique.
+
 ## Déploiement
 
 `render.yaml` décrit le service (blueprint Render). Variables à fournir :
