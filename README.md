@@ -7,7 +7,9 @@ statistiques et notifications de diffusion).
 L'application mobile (Flutter) qui consomme cette API vit dans un dépôt
 séparé, `SyncWatchApp`.
 
-- `api/` — l'API (FastAPI)
+- `api/` — les routes FastAPI
+- `core/`, `db/`, `models/`, `schemas/`, `services/` — configuration, accès
+  base de données, modèles SQLAlchemy, schémas Pydantic, logique métier
 
 ## Stack
 
@@ -17,13 +19,11 @@ JWT (python-jose) · bcrypt · httpx (client TMDB) — déployé sur Render.
 ## Lancer en local
 
 ```bash
-cd api
 python3.12 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-# créer api/.env : DATABASE_URL, SECRET_KEY, TMDB_API_TOKEN
+# créer .env : DATABASE_URL, SECRET_KEY, TMDB_API_TOKEN
 .venv/bin/alembic upgrade head
-cd ..
-api/.venv/bin/uvicorn api.main:app --reload
+.venv/bin/uvicorn main:app --reload
 ```
 
 Documentation interactive : http://127.0.0.1:8000/docs
@@ -35,7 +35,7 @@ automatiquement), chaque test dans une transaction annulée. Les appels TMDB
 sont doublés — aucun accès réseau.
 
 ```bash
-cd api && .venv/bin/python -m pytest tests
+.venv/bin/python -m pytest tests
 ```
 
 ## Déploiement
