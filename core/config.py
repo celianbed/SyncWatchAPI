@@ -41,5 +41,17 @@ class Settings(BaseSettings):
     # Secret exigé par /taches/* (déclenchement par un cron externe en prod)
     CRON_SECRET: str = ""
 
+    # Vérification d'adresse mail
+    URL_BASE_API: str = "http://localhost:8000"  # sert à construire le lien de vérification
+    DUREE_JETON_VERIF_HEURES: int = 48
+
+    # SMTP — laissé vide en dev : les mails sont alors seulement journalisés (voir email_service)
+    SMTP_HOTE: str = ""
+    SMTP_PORT: int = 587
+    SMTP_UTILISATEUR: str = ""
+    SMTP_MOT_DE_PASSE: str = ""
+    SMTP_EXPEDITEUR: str = "no-reply@syncwatch.app"
+    SMTP_TLS: bool = True  # STARTTLS
+
 
 settings = Settings()

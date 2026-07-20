@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, DateTime, String, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.database import Base
@@ -24,6 +24,7 @@ class Utilisateur(Base):
     date_inscription: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     date_derniere_connexion: Mapped[datetime | None] = mapped_column(DateTime)
     statut_compte: Mapped[str] = mapped_column(String(20), server_default="actif")
+    est_verifie: Mapped[bool] = mapped_column(Boolean, server_default="false")
 
     __table_args__ = (
         CheckConstraint("statut_compte IN ('actif','suspendu','supprime')", name="chk_statut_compte"),

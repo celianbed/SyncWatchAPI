@@ -1,20 +1,26 @@
 # api/utilisateurs.py
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.dependances import utilisateur_courant
-from core.securite import hacher_mot_de_passe
+from api.dependances import envoyeur_mail, utilisateur_courant
+from core.securite import creer_jeton_verification, hacher_mot_de_passe
 from db.database import get_db
 from models import Utilisateur
 from schemas.utilisateur import (UtilisateurCreation, UtilisateurMaj,
                                      UtilisateurPublic)
+from services.email_service import Envoyeur, envoyer_mail_verification
 
 router = APIRouter()
 
 
 @router.post("", response_model=UtilisateurPublic, status_code=status.HTTP_201_CREATED)
-def inscrire(donnees: UtilisateurCreation, db: Session = Depends(get_db)):
+def inscrire(
+    donnees: UtilisateurCreation,
+    taches: BackgroundTasks,
+    db: Session = Depends(get_db),
+    envoyeur: Envoyeur = Depends(envoyeur_mail),
+):
     if db.scalar(select(Utilisateur).where(Utilisateur.adresse_mail == donnees.adresse_mail)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Cette adresse mail est déjà utilisée.")
     if db.scalar(select(Utilisateur).where(Utilisateur.pseudo == donnees.pseudo)):
@@ -28,6 +34,11 @@ def inscrire(donnees: UtilisateurCreation, db: Session = Depends(get_db)):
     db.add(utilisateur)
     db.commit()
     db.refresh(utilisateur)
+
+    # compte créé non vérifié : on envoie le lien de confirmation hors du chemin critique
+    jeton = creer_jeton_verification(utilisateur.id_utilisateur)
+    taches.add_task(envoyer_mail_verification, envoyeur,
+                    utilisateur.adresse_mail, utilisateur.pseudo, jeton)
     return utilisateur
 
 

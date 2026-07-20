@@ -26,6 +26,27 @@ def decoder_jeton_acces(jeton: str) -> int | None:
     """Renvoie l'id utilisateur porté par le jeton, ou None s'il est invalide/expiré."""
     try:
         charge = jwt.decode(jeton, settings.SECRET_KEY, algorithms=[settings.ALGORITHME_JWT])
+        # un jeton de vérification (type dédié) ne doit pas servir de jeton d'accès
+        if charge.get("type") not in (None, "access"):
+            return None
+        return int(charge["sub"])
+    except (JWTError, KeyError, ValueError):
+        return None
+
+
+def creer_jeton_verification(id_utilisateur: int) -> str:
+    """Jeton à usage unique porté par le lien de confirmation d'adresse mail."""
+    expiration = datetime.now(timezone.utc) + timedelta(hours=settings.DUREE_JETON_VERIF_HEURES)
+    charge = {"sub": str(id_utilisateur), "exp": expiration, "type": "verification"}
+    return jwt.encode(charge, settings.SECRET_KEY, algorithm=settings.ALGORITHME_JWT)
+
+
+def decoder_jeton_verification(jeton: str) -> int | None:
+    """Renvoie l'id à vérifier porté par le jeton, ou None s'il est invalide/expiré/du mauvais type."""
+    try:
+        charge = jwt.decode(jeton, settings.SECRET_KEY, algorithms=[settings.ALGORITHME_JWT])
+        if charge.get("type") != "verification":
+            return None
         return int(charge["sub"])
     except (JWTError, KeyError, ValueError):
         return None

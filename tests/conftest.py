@@ -11,13 +11,14 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
-from api.dependances import client_tmdb
+from api.dependances import client_tmdb, envoyeur_mail
 from core.config import settings
 
 settings.NOTIFICATIONS_PLANIFIEES = False  # pas de job APScheduler pendant les tests
 
 from db.database import Base, get_db  # noqa: E402
 from main import app  # noqa: E402
+from models import Utilisateur  # noqa: E402
 from tests.faux_tmdb import FauxClientTMDB  # noqa: E402
 
 # base de test dédiée : même serveur Postgres, nom suffixé _test
@@ -62,14 +63,31 @@ def tmdb_faux():
     return FauxClientTMDB()
 
 
+class EnvoyeurMemoire:
+    """Doublure de l'envoyeur d'email : capture les messages au lieu de les envoyer."""
+
+    def __init__(self):
+        self.messages = []  # liste de (destinataire, sujet, corps_texte, corps_html)
+
+    def envoyer(self, destinataire, sujet, corps_texte, corps_html=None):
+        self.messages.append((destinataire, sujet, corps_texte, corps_html))
+
+
 @pytest.fixture()
-def client(db, tmdb_faux):
+def envoyeur():
+    """Envoyeur d'email en mémoire, exposé pour inspecter les mails de vérification."""
+    return EnvoyeurMemoire()
+
+
+@pytest.fixture()
+def client(db, tmdb_faux, envoyeur):
     """Client HTTP de test branché sur la session transactionnelle ci-dessus."""
     def _get_db_test():
         yield db
 
     app.dependency_overrides[get_db] = _get_db_test
     app.dependency_overrides[client_tmdb] = lambda: tmdb_faux
+    app.dependency_overrides[envoyeur_mail] = lambda: envoyeur
     with TestClient(app) as client_test:
         yield client_test
     app.dependency_overrides.clear()
@@ -83,10 +101,20 @@ DONNEES_INSCRIPTION = {
 
 
 @pytest.fixture()
-def inscrire(client):
-    """Factory : inscrit un utilisateur (par défaut DONNEES_INSCRIPTION) et renvoie la réponse."""
-    def _inscrire(**surcharges):
-        return client.post("/utilisateurs", json={**DONNEES_INSCRIPTION, **surcharges})
+def inscrire(client, db):
+    """Factory : inscrit un utilisateur (par défaut DONNEES_INSCRIPTION) et renvoie la réponse.
+
+    Marque le compte comme vérifié par défaut (la plupart des tests veulent un
+    utilisateur exploitable) ; passer `verifier=False` pour tester le flux de
+    confirmation d'adresse mail.
+    """
+    def _inscrire(verifier=True, **surcharges):
+        reponse = client.post("/utilisateurs", json={**DONNEES_INSCRIPTION, **surcharges})
+        if verifier and reponse.status_code == 201:
+            utilisateur = db.get(Utilisateur, reponse.json()["id_utilisateur"])
+            utilisateur.est_verifie = True
+            db.commit()
+        return reponse
     return _inscrire
 
 

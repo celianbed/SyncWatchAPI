@@ -19,6 +19,12 @@ class UtilisateurCreation(BaseModel):
         return v
 
 
+class DemandeVerification(BaseModel):
+    """Renvoi du mail de confirmation à une adresse donnée."""
+
+    adresse_mail: EmailStr
+
+
 class UtilisateurMaj(BaseModel):
     """Mise à jour partielle du profil — les champs absents restent inchangés."""
 
@@ -38,3 +44,4 @@ class UtilisateurPublic(BaseModel):
     avatar: str | None
     date_inscription: datetime
     statut_compte: str
+    est_verifie: bool

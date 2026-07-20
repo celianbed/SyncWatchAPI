@@ -1,4 +1,5 @@
 # tests/test_auth.py
+import re
 from datetime import datetime, timedelta, timezone
 
 from jose import jwt
@@ -11,6 +12,12 @@ from tests.conftest import DONNEES_INSCRIPTION
 
 def se_connecter(client, username, password=DONNEES_INSCRIPTION["mot_de_passe"]):
     return client.post("/auth/connexion", data={"username": username, "password": password})
+
+
+def jeton_du_dernier_mail(envoyeur):
+    """Extrait le jeton de vérification du lien contenu dans le dernier mail envoyé."""
+    _, _, corps_texte, _ = envoyeur.messages[-1]
+    return re.search(r"jeton=([^\s&]+)", corps_texte).group(1)
 
 
 def test_connexion_par_mail(client, inscrire):
@@ -92,3 +99,77 @@ def test_moi_compte_devenu_inactif(client, jeton, db):
     db.commit()
     reponse = client.get("/utilisateurs/moi", headers={"Authorization": f"Bearer {jeton}"})
     assert reponse.status_code == 401
+
+
+# --- Vérification d'adresse mail ---
+
+def test_inscription_envoie_mail_verification(client, inscrire, envoyeur):
+    inscrire(verifier=False)
+    assert len(envoyeur.messages) == 1
+    destinataire, _, corps_texte, corps_html = envoyeur.messages[0]
+    assert destinataire == DONNEES_INSCRIPTION["adresse_mail"]
+    assert "/auth/verifier-email?jeton=" in corps_texte
+    # l'email HTML contient un bouton pointant vers le lien de vérification
+    assert corps_html is not None
+    assert "Vérifier mon compte" in corps_html
+    assert "/auth/verifier-email?jeton=" in corps_html
+
+
+def test_connexion_refusee_si_non_verifie(client, inscrire):
+    inscrire(verifier=False)
+    reponse = se_connecter(client, DONNEES_INSCRIPTION["pseudo"])
+    assert reponse.status_code == 403
+
+
+def test_verifier_email_active_le_compte(client, inscrire, envoyeur):
+    inscrire(verifier=False)
+    jeton_verif = jeton_du_dernier_mail(envoyeur)
+
+    reponse = client.get("/auth/verifier-email", params={"jeton": jeton_verif})
+    assert reponse.status_code == 200
+    # le compte est désormais utilisable
+    assert se_connecter(client, DONNEES_INSCRIPTION["pseudo"]).status_code == 200
+
+
+def test_verifier_email_jeton_invalide(client):
+    assert client.get("/auth/verifier-email", params={"jeton": "n.importe.quoi"}).status_code == 400
+
+
+def test_verifier_email_refuse_un_jeton_dacces(client, jeton):
+    """Un jeton d'accès (mauvais type) ne peut pas servir à vérifier un compte."""
+    assert client.get("/auth/verifier-email", params={"jeton": jeton}).status_code == 400
+
+
+def test_verifier_email_idempotent(client, inscrire, envoyeur):
+    inscrire(verifier=False)
+    jeton_verif = jeton_du_dernier_mail(envoyeur)
+    assert client.get("/auth/verifier-email", params={"jeton": jeton_verif}).status_code == 200
+    # rejouer le même lien ne provoque pas d'erreur
+    reponse = client.get("/auth/verifier-email", params={"jeton": jeton_verif})
+    assert reponse.status_code == 200
+    assert "déjà" in reponse.json()["message"]
+
+
+def test_renvoyer_verification_envoie_un_nouveau_mail(client, inscrire, envoyeur):
+    inscrire(verifier=False)
+    envoyeur.messages.clear()
+    reponse = client.post("/auth/renvoyer-verification",
+                          json={"adresse_mail": DONNEES_INSCRIPTION["adresse_mail"]})
+    assert reponse.status_code == 202
+    assert len(envoyeur.messages) == 1
+
+
+def test_renvoyer_verification_compte_inconnu_ne_revele_rien(client, envoyeur):
+    reponse = client.post("/auth/renvoyer-verification",
+                          json={"adresse_mail": "inconnu@example.com"})
+    assert reponse.status_code == 202  # même réponse qu'un compte existant
+    assert envoyeur.messages == []     # mais aucun mail envoyé
+
+
+def test_renvoyer_verification_deja_verifie_pas_de_mail(client, inscrire, envoyeur):
+    inscrire()  # vérifié par défaut
+    envoyeur.messages.clear()
+    reponse = client.post("/auth/renvoyer-verification",
+                          json={"adresse_mail": DONNEES_INSCRIPTION["adresse_mail"]})
+    assert reponse.status_code == 202
+    assert envoyeur.messages == []
