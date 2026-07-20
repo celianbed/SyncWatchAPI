@@ -127,6 +127,9 @@ def test_verifier_email_active_le_compte(client, inscrire, envoyeur):
 
     reponse = client.get("/auth/verifier-email", params={"jeton": jeton_verif})
     assert reponse.status_code == 200
+    # page HTML de confirmation
+    assert "text/html" in reponse.headers["content-type"]
+    assert "vérifiée" in reponse.text
     # le compte est désormais utilisable
     assert se_connecter(client, DONNEES_INSCRIPTION["pseudo"]).status_code == 200
 
@@ -144,10 +147,10 @@ def test_verifier_email_idempotent(client, inscrire, envoyeur):
     inscrire(verifier=False)
     jeton_verif = jeton_du_dernier_mail(envoyeur)
     assert client.get("/auth/verifier-email", params={"jeton": jeton_verif}).status_code == 200
-    # rejouer le même lien ne provoque pas d'erreur
+    # rejouer le même lien ne provoque pas d'erreur (page de confirmation identique)
     reponse = client.get("/auth/verifier-email", params={"jeton": jeton_verif})
     assert reponse.status_code == 200
-    assert "déjà" in reponse.json()["message"]
+    assert "vérifiée" in reponse.text
 
 
 def test_renvoyer_verification_envoie_un_nouveau_mail(client, inscrire, envoyeur):
