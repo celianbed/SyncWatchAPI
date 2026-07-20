@@ -1,0 +1,23 @@
+# Blueprint Render — https://render.com/docs/blueprint-spec
+# Le service web FastAPI ; la base est chez Neon (DATABASE_URL à renseigner).
+services:
+  - type: web
+    name: syncwatch-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r api/requirements.txt
+    # les migrations tournent au démarrage : idempotent, et le plan gratuit
+    # n'a pas de preDeployCommand
+    startCommand: alembic -c api/alembic.ini upgrade head && uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.11
+      - key: DATABASE_URL
+        sync: false # collée depuis Neon (avec ?sslmode=require), jamais dans le dépôt
+      - key: TMDB_API_TOKEN
+        sync: false # jeton TMDB v4, jamais dans le dépôt
+      - key: SECRET_KEY
+        generateValue: true # généré par Render au premier déploiement
+      - key: CRON_SECRET
+        generateValue: true # à recopier dans cron-job.org (header X-Cron-Secret)

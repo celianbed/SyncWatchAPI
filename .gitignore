@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+
+# Tests / couverture
+.coverage*
+coverage.xml
+htmlcov/
+test.db
+
+# Secrets — jamais dans le dépôt
+# (le motif « .env » sans slash couvre aussi app/.env)
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# Fichiers temporaires (vim, etc.)
+*~
+.*.sw?
+.cache
