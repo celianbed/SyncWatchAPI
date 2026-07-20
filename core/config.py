@@ -44,13 +44,17 @@ class Settings(BaseSettings):
     # Vérification d'adresse mail
     URL_BASE_API: str = "http://localhost:8000"  # sert à construire le lien de vérification
     DUREE_JETON_VERIF_HEURES: int = 48
+    MAIL_EXPEDITEUR: str = "no-reply@syncwatch.app"  # « From » des mails (validé chez Brevo)
 
-    # SMTP — laissé vide en dev : les mails sont alors seulement journalisés (voir email_service)
+    # Envoi via l'API HTTP de Brevo (port 443) — recommandé sur Render/PaaS qui filtrent le SMTP.
+    # Prioritaire sur le SMTP si renseigné. Clé « xkeysib-… » (SMTP & API → API Keys).
+    BREVO_API_KEY: str = ""
+
+    # SMTP — repli / dev local. Laissé vide : les mails sont alors seulement journalisés.
     SMTP_HOTE: str = ""
     SMTP_PORT: int = 587
     SMTP_UTILISATEUR: str = ""
     SMTP_MOT_DE_PASSE: str = ""
-    SMTP_EXPEDITEUR: str = "no-reply@syncwatch.app"
     SMTP_TLS: bool = True  # STARTTLS
 
 

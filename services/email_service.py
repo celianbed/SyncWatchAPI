@@ -3,7 +3,10 @@ import html
 import logging
 import smtplib
 from email.message import EmailMessage
+from email.utils import parseaddr
 from typing import Protocol
+
+import httpx
 
 from core.config import settings
 
@@ -26,7 +29,8 @@ class EnvoyeurJournal:
 
     def envoyer(self, destinataire: str, sujet: str, corps_texte: str,
                 corps_html: str | None = None) -> None:
-        journal.info("Email vers %s — %s\n%s", destinataire, sujet, corps_texte)
+        journal.warning("Aucun backend mail configuré — mail NON envoyé (mode journal) vers %s.\n%s",
+                        destinataire, corps_texte)
 
 
 class EnvoyeurSMTP:
@@ -35,14 +39,16 @@ class EnvoyeurSMTP:
     def envoyer(self, destinataire: str, sujet: str, corps_texte: str,
                 corps_html: str | None = None) -> None:
         message = EmailMessage()
-        message["From"] = settings.SMTP_EXPEDITEUR
+        message["From"] = settings.MAIL_EXPEDITEUR
         message["To"] = destinataire
         message["Subject"] = sujet
         message.set_content(corps_texte)  # version texte (repli)
         if corps_html:
             message.add_alternative(corps_html, subtype="html")
 
-        with smtplib.SMTP(settings.SMTP_HOTE, settings.SMTP_PORT) as serveur:
+        # timeout : sans lui, un port SMTP filtré fait « hanguer » la tâche de fond
+        # indéfiniment (aucune erreur, aucun mail). Le timeout la transforme en erreur nette.
+        with smtplib.SMTP(settings.SMTP_HOTE, settings.SMTP_PORT, timeout=15) as serveur:
             if settings.SMTP_TLS:
                 serveur.starttls()
             if settings.SMTP_UTILISATEUR:
@@ -50,9 +56,44 @@ class EnvoyeurSMTP:
             serveur.send_message(message)
 
 
+class EnvoyeurBrevoAPI:
+    """Envoi via l'API HTTP de Brevo (HTTPS, port 443).
+
+    À préférer sur les hébergeurs PaaS (Render, Heroku…) qui filtrent les ports SMTP.
+    """
+
+    URL = "https://api.brevo.com/v3/smtp/email"
+
+    def envoyer(self, destinataire: str, sujet: str, corps_texte: str,
+                corps_html: str | None = None) -> None:
+        nom, adresse = parseaddr(settings.MAIL_EXPEDITEUR)
+        expediteur: dict[str, str] = {"email": adresse}
+        if nom:
+            expediteur["name"] = nom
+
+        charge: dict = {
+            "sender": expediteur,
+            "to": [{"email": destinataire}],
+            "subject": sujet,
+            "textContent": corps_texte,
+        }
+        if corps_html:
+            charge["htmlContent"] = corps_html
+
+        with httpx.Client(timeout=15) as client:
+            reponse = client.post(
+                self.URL, json=charge,
+                headers={"api-key": settings.BREVO_API_KEY, "accept": "application/json"})
+            reponse.raise_for_status()  # lève sur 4xx/5xx (clé invalide, expéditeur non validé…)
+
+
 def envoyeur_par_defaut() -> Envoyeur:
-    """SMTP si un hôte est configuré, sinon journalisation (dev/tests)."""
-    return EnvoyeurSMTP() if settings.SMTP_HOTE else EnvoyeurJournal()
+    """API Brevo si une clé est configurée (recommandé en prod), sinon SMTP, sinon journal."""
+    if settings.BREVO_API_KEY:
+        return EnvoyeurBrevoAPI()
+    if settings.SMTP_HOTE:
+        return EnvoyeurSMTP()
+    return EnvoyeurJournal()
 
 
 def construire_lien_verification(jeton: str) -> str:
@@ -124,5 +165,5 @@ def envoyer_mail_verification(
     corps_html = _corps_html_verification(pseudo, lien)
     try:
         envoyeur.envoyer(destinataire, sujet, corps_texte, corps_html)
-    except Exception:  # noqa: BLE001 — on journalise et on n'interrompt pas le flux
+    except Exception:  # noqa: BLE001 — on journalise (niveau ERROR, visible) sans interrompre le flux
         journal.exception("Échec de l'envoi du mail de vérification à %s", destinataire)
