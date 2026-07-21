@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
@@ -55,6 +55,13 @@ def db(moteur):
     session.close()
     transaction.rollback()
     connexion.close()
+
+
+@pytest.fixture()
+def aujourdhui(db):
+    """Date du jour selon Postgres (même source que les requêtes SQL) — évite les
+    décalages avec l'heure locale, donc des tests non flaky quel que soit le fuseau."""
+    return db.scalar(select(func.current_date()))
 
 
 @pytest.fixture()

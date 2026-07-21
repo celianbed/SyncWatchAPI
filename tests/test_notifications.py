@@ -1,6 +1,4 @@
 # tests/test_notifications.py
-from datetime import date
-
 import pytest
 from sqlalchemy import func, select
 
@@ -22,13 +20,13 @@ class FauxPousseur:
 
 
 @pytest.fixture()
-def diffusion_du_jour(client, jeton, db):
+def diffusion_du_jour(client, jeton, db, aujourdhui):
     """Série suivie + appareil enregistré + un épisode diffusé aujourd'hui (S02E02)."""
     client.post(f"/series/{REF_SERIE}/suivre", headers=_entete(jeton))
     client.post("/appareils", headers=_entete(jeton),
                 json={"jeton_notif": "fcm-jeton-1", "plateforme": "android"})
     episode = db.scalar(select(Episode).where(Episode.reference_tmdb == 2002))
-    episode.date_diffusion = date.today()
+    episode.date_diffusion = aujourdhui  # date Postgres (voir fixture) → non flaky
     db.commit()
     return episode
 

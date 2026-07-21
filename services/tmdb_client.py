@@ -12,9 +12,14 @@ class ClientTMDB:
     """Client asynchrone pour l'API TMDB v3 (jeton d'accès en lecture v4)."""
 
     def __init__(self, transport: httpx.AsyncBaseTransport | None = None):
+        # .strip() : un espace / retour à la ligne collé au jeton produit un header
+        # illégal (httpx.LocalProtocolError). Sans jeton, on n'envoie pas d'en-tête
+        # Authorization vide (« Bearer ») — TMDB renverra alors un 401 explicite.
+        jeton = settings.TMDB_API_TOKEN.strip()
+        entetes = {"Authorization": f"Bearer {jeton}"} if jeton else {}
         self._http = httpx.AsyncClient(
             base_url=settings.TMDB_URL_BASE,
-            headers={"Authorization": f"Bearer {settings.TMDB_API_TOKEN}"},
+            headers=entetes,
             params={"language": settings.TMDB_LANGUE},
             timeout=10.0,
             transport=transport,
