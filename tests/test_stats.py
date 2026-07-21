@@ -50,9 +50,10 @@ def test_stats_compte_vierge(client, jeton):
 def test_historique_par_jour(client, jeton, historique_rempli):
     tranches = client.get("/stats/historique", params={"periode": "jour"},
                           headers=_entete(jeton)).json()
-    assert len(tranches) == 1  # tout vu aujourd'hui
+    assert len(tranches) == 1  # tout vu aujourd'hui (épisodes + films même jour)
     assert tranches[0]["episodes_vus"] == 2
-    assert tranches[0]["minutes"] == 100
+    assert tranches[0]["films_vus"] == 2       # 2 visionnages du film
+    assert tranches[0]["minutes"] == 100 + 278  # épisodes (52+48) + films (139×2)
 
 
 def test_historique_bornes(client, jeton, historique_rempli):

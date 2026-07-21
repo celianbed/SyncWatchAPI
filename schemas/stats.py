@@ -17,4 +17,5 @@ class StatsGlobales(BaseModel):
 class PeriodeStats(BaseModel):
     periode: datetime
     episodes_vus: int
-    minutes: int
+    films_vus: int
+    minutes: int  # épisodes + films confondus

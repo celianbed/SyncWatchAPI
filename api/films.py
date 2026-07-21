@@ -1,6 +1,4 @@
 # api/films.py
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -88,10 +86,12 @@ async def marquer_film_vu(
     if film is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Film inconnu de TMDB.")
 
-    # horodatage côté Python : now() SQL est figé par transaction, ce qui
-    # empêcherait deux visionnages dans la même transaction (PK composite)
+    # clock_timestamp() : horloge réelle de la BDD (avance dans la transaction,
+    # contrairement à now() figé → pas de collision de PK sur deux visionnages),
+    # et surtout même horloge que les épisodes → regroupement cohérent dans les stats.
     visionnage = VisionnerFilm(id_utilisateur=utilisateur.id_utilisateur,
-                               id_film=film.id_film, date_visionnage=datetime.now())
+                               id_film=film.id_film,
+                               date_visionnage=func.clock_timestamp())
     db.add(visionnage)
 
     suivi = db.get(SuivreFilm, {"id_utilisateur": utilisateur.id_utilisateur,

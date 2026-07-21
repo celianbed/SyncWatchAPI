@@ -3,7 +3,7 @@ from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, select, union_all
 from sqlalchemy.orm import Session
 
 from api.dependances import utilisateur_courant
@@ -62,22 +62,38 @@ def historique(
     utilisateur: Utilisateur = Depends(utilisateur_courant),
     db: Session = Depends(get_db),
 ):
-    """Épisodes vus et minutes par tranche de temps (bornes debut/fin optionnelles)."""
-    tranche = func.date_trunc(_TRONCATURES[periode],
-                              VisionnerEpisode.date_visionnage).label("periode")
+    """Visionnages (épisodes + films) et minutes par tranche de temps."""
+    uid = utilisateur.id_utilisateur
+
+    # on unifie épisodes et films dans une même colonne (date, durée, est_film)
+    episodes = (
+        select(VisionnerEpisode.date_visionnage.label("date_v"),
+               Episode.duree.label("duree"),
+               literal(False).label("est_film"))
+        .join(Episode, VisionnerEpisode.id_episode == Episode.id_episode)
+        .where(VisionnerEpisode.id_utilisateur == uid))
+    films = (
+        select(VisionnerFilm.date_visionnage.label("date_v"),
+               Film.duree.label("duree"),
+               literal(True).label("est_film"))
+        .join(Film, VisionnerFilm.id_film == Film.id_film)
+        .where(VisionnerFilm.id_utilisateur == uid))
+    if debut is not None:
+        episodes = episodes.where(VisionnerEpisode.date_visionnage >= debut)
+        films = films.where(VisionnerFilm.date_visionnage >= debut)
+    if fin is not None:
+        episodes = episodes.where(VisionnerEpisode.date_visionnage < fin)
+        films = films.where(VisionnerFilm.date_visionnage < fin)
+
+    v = union_all(episodes, films).subquery()
+    tranche = func.date_trunc(_TRONCATURES[periode], v.c.date_v).label("periode")
     requete = (
         select(tranche,
-               func.count().label("episodes_vus"),
-               func.coalesce(func.sum(Episode.duree), 0).label("minutes"))
-        .select_from(VisionnerEpisode)
-        .join(Episode, VisionnerEpisode.id_episode == Episode.id_episode)
-        .where(VisionnerEpisode.id_utilisateur == utilisateur.id_utilisateur)
+               func.count().filter(v.c.est_film.is_(False)).label("episodes_vus"),
+               func.count().filter(v.c.est_film.is_(True)).label("films_vus"),
+               func.coalesce(func.sum(v.c.duree), 0).label("minutes"))
         .group_by(tranche)
         .order_by(tranche))
-    if debut is not None:
-        requete = requete.where(VisionnerEpisode.date_visionnage >= debut)
-    if fin is not None:
-        requete = requete.where(VisionnerEpisode.date_visionnage < fin)
     return [PeriodeStats(periode=ligne.periode, episodes_vus=ligne.episodes_vus,
-                         minutes=ligne.minutes)
+                         films_vus=ligne.films_vus, minutes=ligne.minutes)
             for ligne in db.execute(requete)]
