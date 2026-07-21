@@ -68,3 +68,21 @@ def test_film_vu_met_le_suivi_a_jour(client, jeton, db):
 
 def test_film_vu_sans_jeton(client):
     assert client.post(f"/films/{REF_FILM}/vu").status_code == 401
+
+
+def test_etat_film_pas_vu(client, jeton):
+    # film jamais vu (pas encore en cache) → deja_vu false
+    reponse = client.get(f"/films/{REF_FILM}/vu", headers=_entete(jeton))
+    assert reponse.status_code == 200
+    assert reponse.json() == {"deja_vu": False, "nombre_visionnages": 0}
+
+
+def test_etat_film_vu(client, jeton):
+    client.post(f"/films/{REF_FILM}/vu", headers=_entete(jeton))
+    client.post(f"/films/{REF_FILM}/vu", headers=_entete(jeton))
+    reponse = client.get(f"/films/{REF_FILM}/vu", headers=_entete(jeton))
+    assert reponse.json() == {"deja_vu": True, "nombre_visionnages": 2}
+
+
+def test_etat_film_sans_jeton(client):
+    assert client.get(f"/films/{REF_FILM}/vu").status_code == 401

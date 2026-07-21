@@ -22,6 +22,13 @@ class FilmVu(BaseModel):
     nombre_visionnages: int
 
 
+class EtatVisionnageFilm(BaseModel):
+    """État de visionnage d'un film pour l'utilisateur courant (bouton « Vu »)."""
+
+    deja_vu: bool
+    nombre_visionnages: int
+
+
 class ProchainEpisode(BaseModel):
     id_episode: int
     num_saison: int

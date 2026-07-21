@@ -29,3 +29,23 @@ class ResultatRecherche(BaseModel):
             image_de_fond=brut.get("backdrop_path"),
             date_sortie=date.fromisoformat(date_brute) if date_brute else None,
             note_moyenne=brut.get("vote_average"))
+
+    @classmethod
+    def depuis_serie(cls, serie) -> "ResultatRecherche":
+        """Projette une série du cache (modèle Serie) vers ce schéma (carrousels profil)."""
+        note = serie.note_moyenne_tmdb
+        return cls(
+            reference_tmdb=serie.reference_tmdb, type="serie", titre=serie.titre,
+            affiche=serie.affiche, image_de_fond=serie.image_de_fond,
+            date_sortie=serie.date_premiere_diffusion,
+            note_moyenne=float(note) if note is not None else None)
+
+    @classmethod
+    def depuis_film(cls, film) -> "ResultatRecherche":
+        """Projette un film du cache (modèle Film) vers ce schéma (carrousels profil)."""
+        note = film.note_moyenne_tmdb
+        return cls(
+            reference_tmdb=film.reference_tmdb, type="film", titre=film.titre,
+            affiche=film.affiche, image_de_fond=None,
+            date_sortie=film.date_sortie,
+            note_moyenne=float(note) if note is not None else None)

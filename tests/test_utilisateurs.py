@@ -4,6 +4,7 @@ from sqlalchemy import select
 from core.securite import verifier_mot_de_passe
 from models import Utilisateur
 from tests.conftest import DONNEES_INSCRIPTION
+from tests.faux_tmdb import REF_FILM, REF_SERIE
 
 
 def test_inscription_valide(inscrire):
@@ -106,3 +107,41 @@ def test_modifier_pseudo_trop_court(client, jeton):
 def test_modifier_profil_sans_jeton(client):
     assert client.patch("/utilisateurs/moi",
                         json={"pseudo": "intrus"}).status_code == 401
+
+
+# --- Profil : favoris & films vus (carrousels) ---
+
+def test_mes_favoris(client, jeton):
+    client.post(f"/films/{REF_FILM}/suivre", headers=_entete(jeton),
+                json={"favori": True})
+    client.post(f"/series/{REF_SERIE}/suivre", headers=_entete(jeton),
+                json={"favori": True})
+    reponse = client.get("/utilisateurs/moi/favoris", headers=_entete(jeton))
+    assert reponse.status_code == 200
+    corps = reponse.json()
+    assert {r["type"] for r in corps} == {"serie", "film"}
+
+
+def test_mes_favoris_exclut_non_favoris(client, jeton):
+    # suivi sans favori → n'apparaît pas dans les favoris
+    client.post(f"/films/{REF_FILM}/suivre", headers=_entete(jeton))
+    reponse = client.get("/utilisateurs/moi/favoris", headers=_entete(jeton))
+    assert reponse.json() == []
+
+
+def test_mes_films_vus(client, jeton):
+    client.post(f"/films/{REF_FILM}/vu", headers=_entete(jeton))
+    reponse = client.get("/utilisateurs/moi/films-vus", headers=_entete(jeton))
+    assert reponse.status_code == 200
+    corps = reponse.json()
+    assert len(corps) == 1
+    assert corps[0]["type"] == "film"
+
+
+def test_mes_films_vus_vide(client, jeton):
+    assert client.get("/utilisateurs/moi/films-vus",
+                      headers=_entete(jeton)).json() == []
+
+
+def test_profil_favoris_sans_jeton(client):
+    assert client.get("/utilisateurs/moi/favoris").status_code == 401

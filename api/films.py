@@ -12,7 +12,7 @@ from schemas.film import FilmPublic
 from schemas.plateformes import PlateformesVisionnage
 from schemas.recherche import ResultatRecherche
 from schemas.suivi import SuiviFilmCreation, SuiviFilmPublic
-from schemas.visionnage import FilmVu
+from schemas.visionnage import EtatVisionnageFilm, FilmVu
 from services import catalogue_service
 from services.tmdb_client import ClientTMDB
 
@@ -105,6 +105,22 @@ async def marquer_film_vu(
         VisionnerFilm.id_film == film.id_film))
     return FilmVu(id_film=film.id_film, date_visionnage=visionnage.date_visionnage,
                   nombre_visionnages=nombre)
+
+
+@router.get("/{reference_tmdb}/vu", response_model=EtatVisionnageFilm)
+def etat_visionnage_film(
+    reference_tmdb: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Le film a-t-il déjà été vu par l'utilisateur courant ? (bouton « Vu » de la fiche)"""
+    film = db.scalar(select(Film).where(Film.reference_tmdb == reference_tmdb))
+    if film is None:  # pas encore en cache = jamais vu
+        return EtatVisionnageFilm(deja_vu=False, nombre_visionnages=0)
+    nombre = db.scalar(select(func.count()).select_from(VisionnerFilm).where(
+        VisionnerFilm.id_utilisateur == utilisateur.id_utilisateur,
+        VisionnerFilm.id_film == film.id_film))
+    return EtatVisionnageFilm(deja_vu=nombre > 0, nombre_visionnages=nombre)
 
 
 @router.get("/{reference_tmdb}/similaires", response_model=list[ResultatRecherche])

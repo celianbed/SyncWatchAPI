@@ -1,12 +1,14 @@
 # api/utilisateurs.py
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.dependances import envoyeur_mail, utilisateur_courant
 from core.securite import creer_jeton_verification, hacher_mot_de_passe
 from db.database import get_db
-from models import Utilisateur
+from models import (Film, Serie, SuivreFilm, SuivreSerie, Utilisateur,
+                       VisionnerFilm)
+from schemas.recherche import ResultatRecherche
 from schemas.utilisateur import (UtilisateurCreation, UtilisateurMaj,
                                      UtilisateurPublic)
 from services.email_service import Envoyeur, envoyer_mail_verification
@@ -67,6 +69,43 @@ def modifier_moi(
     db.commit()
     db.refresh(utilisateur)
     return utilisateur
+
+
+# déclarés avant /{id_utilisateur} (deux segments : pas de collision, mais on groupe le "moi")
+@router.get("/moi/favoris", response_model=list[ResultatRecherche])
+def mes_favoris(
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Séries et films marqués favoris — carrousel du profil."""
+    uid = utilisateur.id_utilisateur
+    series = db.scalars(
+        select(Serie).join(SuivreSerie, SuivreSerie.id_serie == Serie.id_serie)
+        .where(SuivreSerie.id_utilisateur == uid, SuivreSerie.favori.is_(True))
+        .order_by(SuivreSerie.date_ajout.desc())).all()
+    films = db.scalars(
+        select(Film).join(SuivreFilm, SuivreFilm.id_film == Film.id_film)
+        .where(SuivreFilm.id_utilisateur == uid, SuivreFilm.favori.is_(True))).all()
+    return ([ResultatRecherche.depuis_serie(s) for s in series]
+            + [ResultatRecherche.depuis_film(f) for f in films])
+
+
+@router.get("/moi/films-vus", response_model=list[ResultatRecherche])
+def mes_films_vus(
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Films vus récemment (distincts, dernier visionnage d'abord) — carrousel du profil."""
+    uid = utilisateur.id_utilisateur
+    dernier = (
+        select(VisionnerFilm.id_film,
+               func.max(VisionnerFilm.date_visionnage).label("dernier"))
+        .where(VisionnerFilm.id_utilisateur == uid)
+        .group_by(VisionnerFilm.id_film).subquery())
+    films = db.scalars(
+        select(Film).join(dernier, Film.id_film == dernier.c.id_film)
+        .order_by(dernier.c.dernier.desc()).limit(20)).all()
+    return [ResultatRecherche.depuis_film(f) for f in films]
 
 
 @router.get("/{id_utilisateur}", response_model=UtilisateurPublic)

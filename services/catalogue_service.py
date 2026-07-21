@@ -15,8 +15,11 @@ def _date_ou_none(valeur: str | None) -> date | None:
     return date.fromisoformat(valeur) if valeur else None
 
 
-def _est_frais(date_maj: datetime) -> bool:
-    return datetime.now() - date_maj < timedelta(hours=settings.DUREE_CACHE_HEURES)
+def _est_frais(db: Session, date_maj: datetime) -> bool:
+    # écart mesuré par l'horloge de la BDD (func.now()), pas datetime.now() du process :
+    # un décalage de fuseau process/BDD fausserait sinon la fenêtre de fraîcheur.
+    ecart = db.scalar(select(func.now() - date_maj))
+    return ecart is not None and ecart < timedelta(hours=settings.DUREE_CACHE_HEURES)
 
 
 def upsert_serie(db: Session, donnees: dict) -> Serie:
@@ -81,7 +84,7 @@ def upsert_film(db: Session, donnees: dict) -> Film:
 async def obtenir_film(db: Session, tmdb: ClientTMDB, reference_tmdb: int) -> Film | None:
     """Renvoie le film du cache si frais, sinon le (re)charge depuis TMDB."""
     film = db.scalar(select(Film).where(Film.reference_tmdb == reference_tmdb))
-    if film is not None and _est_frais(film.date_maj_cache):
+    if film is not None and _est_frais(db, film.date_maj_cache):
         return film
     donnees = await tmdb.get_film(reference_tmdb)
     if donnees is None:
@@ -95,7 +98,7 @@ async def obtenir_serie(db: Session, tmdb: ClientTMDB, reference_tmdb: int) -> S
     Si TMDB ne connaît pas la référence : None (ou le cache périmé s'il existe).
     """
     serie = db.scalar(select(Serie).where(Serie.reference_tmdb == reference_tmdb))
-    if serie is not None and _est_frais(serie.date_maj_cache):
+    if serie is not None and _est_frais(db, serie.date_maj_cache):
         return serie
     donnees = await tmdb.get_serie(reference_tmdb)
     if donnees is None:
