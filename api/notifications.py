@@ -6,11 +6,37 @@ from sqlalchemy.orm import Session
 
 from api.dependances import utilisateur_courant
 from db.database import get_db
-from models import Appareil, Notification, Utilisateur
+from models import (Appareil, Episode, Film, Notification, Saison, Serie,
+                       Utilisateur)
 from schemas.notification import (AppareilCreation, AppareilPublic,
                                       NotificationPublique)
 
 router = APIRouter()
+
+
+def _resoudre_cible(db: Session, notif: Notification) -> tuple[int | None, str | None]:
+    """Résout la fiche à ouvrir au tap : (reference_tmdb, "serie"|"film")."""
+    if notif.id_film is not None:
+        return db.scalar(select(Film.reference_tmdb)
+                         .where(Film.id_film == notif.id_film)), "film"
+    if notif.id_serie is not None:
+        return db.scalar(select(Serie.reference_tmdb)
+                         .where(Serie.id_serie == notif.id_serie)), "serie"
+    if notif.id_episode is not None:  # remonte épisode → saison → série
+        return db.scalar(
+            select(Serie.reference_tmdb)
+            .join(Saison, Saison.id_serie == Serie.id_serie)
+            .join(Episode, Episode.id_saison == Saison.id_saison)
+            .where(Episode.id_episode == notif.id_episode)), "serie"
+    return None, None
+
+
+def _publier(db: Session, notif: Notification) -> NotificationPublique:
+    reference, cible = _resoudre_cible(db, notif)
+    pub = NotificationPublique.model_validate(notif)
+    pub.reference_tmdb = reference
+    pub.cible = cible if reference is not None else None
+    return pub
 
 
 @router.post("/appareils", response_model=AppareilPublic,
@@ -62,7 +88,7 @@ def mes_notifications(
                .order_by(Notification.date_envoi.desc()))
     if lue is not None:
         requete = requete.where(Notification.lue == lue)
-    return db.scalars(requete).all()
+    return [_publier(db, notif) for notif in db.scalars(requete)]
 
 
 @router.patch("/notifications/{id_notification}/lue", response_model=NotificationPublique)

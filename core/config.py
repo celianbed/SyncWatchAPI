@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     # Notifications — scan quotidien des diffusions
     NOTIFICATIONS_PLANIFIEES: bool = True  # False dans les tests
     HEURE_SCAN_NOTIFICATIONS: int = 8  # heure locale du job
+    # Push FCM (Android) : JSON du compte de service Firebase. Vide = pas de push (mode journal).
+    FIREBASE_CREDENTIALS_JSON: str = ""
 
     # Secret exigé par /taches/* (déclenchement par un cron externe en prod)
     CRON_SECRET: str = ""

@@ -15,8 +15,8 @@ class FauxPousseur:
     def __init__(self):
         self.envois = []
 
-    def envoyer(self, jetons, titre, corps):
-        self.envois.append((jetons, titre, corps))
+    def envoyer(self, jetons, titre, corps, donnees=None):
+        self.envois.append((jetons, titre, corps, donnees))
 
 
 @pytest.fixture()
@@ -75,9 +75,11 @@ def test_scan_cree_notification_et_pousse(client, jeton, db, diffusion_du_jour):
     creees = notification_service.scanner_diffusions_du_jour(db, pousseur)
     assert creees == 1
 
-    jetons, _, corps = pousseur.envois[0]
+    jetons, _, corps, donnees = pousseur.envois[0]
     assert jetons == ["fcm-jeton-1"]
     assert "Les Chroniques" in corps and "S02E02" in corps
+    # payload de navigation : ouvre la fiche série au tap
+    assert donnees == {"reference_tmdb": REF_SERIE, "cible": "serie"}
 
     notifications = client.get("/notifications", headers=_entete(jeton)).json()
     assert len(notifications) == 1
@@ -108,6 +110,14 @@ def test_marquer_lue_et_filtrer(client, jeton, db, diffusion_du_jour):
     assert reponse.json()["lue"] is True
     assert client.get("/notifications", params={"lue": False},
                       headers=_entete(jeton)).json() == []
+
+
+def test_notification_porte_la_cible(client, jeton, db, diffusion_du_jour):
+    # une notif d'épisode doit pointer vers la fiche série (reference_tmdb + cible)
+    notification_service.scanner_diffusions_du_jour(db)
+    notif = client.get("/notifications", headers=_entete(jeton)).json()[0]
+    assert notif["cible"] == "serie"
+    assert notif["reference_tmdb"] == REF_SERIE
 
 
 def test_notification_dautrui_introuvable(client, jeton, inscrire, db, diffusion_du_jour):

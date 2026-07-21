@@ -11,4 +11,5 @@ python-jose==3.5.0
 python-multipart==0.0.32
 httpx==0.28.1
 apscheduler==3.11.3
+firebase-admin==7.1.0
 pytest==9.1.1

@@ -34,5 +34,5 @@ async def scan_diffusions(
     puis crée et pousse les notifications des épisodes diffusés aujourd'hui."""
     series = await notification_service.resynchroniser_series_suivies(db, tmdb)
     notifications = notification_service.scanner_diffusions_du_jour(
-        db, notification_service.PousseurJournal())
+        db, notification_service.pousseur_par_defaut())
     return {"series_resynchronisees": series, "notifications_creees": notifications}
