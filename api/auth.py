@@ -1,53 +1,63 @@
 # api/auth.py
-from fastapi import (APIRouter, BackgroundTasks, Depends, HTTPException, Query,
-                     status)
+import html
+
+from fastapi import (APIRouter, BackgroundTasks, Depends, Form, HTTPException,
+                     Query, status)
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.dependances import envoyeur_mail
-from core.securite import (creer_jeton_acces, creer_jeton_verification,
-                           decoder_jeton_verification, verifier_mot_de_passe)
+from core.gabarits import rendre
+from core.securite import (creer_jeton_acces, creer_jeton_reset,
+                           creer_jeton_verification, decoder_jeton_reset,
+                           decoder_jeton_verification, empreinte_mot_de_passe,
+                           hacher_mot_de_passe, verifier_mot_de_passe)
 from db.database import get_db
 from models import Utilisateur
 from schemas.jeton import Jeton
-from schemas.utilisateur import DemandeVerification
-from services.email_service import Envoyeur, envoyer_mail_verification
+from schemas.utilisateur import DemandeReinitialisation, DemandeVerification
+from services.email_service import (Envoyeur, envoyer_mail_reset,
+                                    envoyer_mail_verification)
 
 router = APIRouter()
 
 
-def _page_verification(succes: bool) -> str:
-    """Page de confirmation affichée après clic sur le lien de vérification.
-    L'app détecte la vérification toute seule et connecte l'utilisateur — la page
-    invite simplement à revenir dans l'app."""
-    if succes:
-        icone, titre = "✅", "Adresse vérifiée"
-        sous_titre = ("Ton compte est activé. Retourne dans l'application SyncWatch : "
-                      "tu vas être connecté automatiquement.")
-    else:
-        icone, titre = "⚠️", "Lien invalide ou expiré"
-        sous_titre = ("Ce lien de vérification n'est plus valable. Ouvre l'app "
-                      "et demande un nouveau lien.")
-    return f"""<!doctype html>
-<html lang="fr"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SyncWatch</title>
-<style>
-  body {{ margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
-         background:#0F172A; font-family:-apple-system,Arial,sans-serif; color:#F1F5F9; }}
-  .carte {{ background:#1E293B; border-radius:16px; padding:36px 28px; max-width:340px; width:86%;
-           text-align:center; }}
-  .icone {{ font-size:52px; }}
-  h1 {{ font-size:22px; margin:16px 0 6px; }}
-  p {{ color:#94A3B8; font-size:14px; line-height:21px; margin:0; }}
-</style></head>
-<body><div class="carte">
-  <div class="icone">{icone}</div>
-  <h1>{titre}</h1>
-  <p>{sous_titre}</p>
-</div></body></html>"""
+def _page_resultat(icone: str, titre: str, sous_titre: str) -> str:
+    """Page « carte » de résultat (vérification, reset…) — gabarit page_resultat.html."""
+    return rendre("page_resultat.html", icone=icone, titre=titre, sous_titre=sous_titre)
+
+
+def _page_reset_formulaire(jeton: str, erreur: str | None = None) -> str:
+    """Formulaire web « nouveau mot de passe + confirmation » — gabarit reset_formulaire.html."""
+    bloc_erreur = f'<p class="err">{html.escape(erreur)}</p>' if erreur else ""
+    return rendre("reset_formulaire.html", bloc_erreur=bloc_erreur,
+                  jeton=html.escape(jeton))
+
+
+def _valider_mot_de_passe(mdp: str, confirmation: str) -> str | None:
+    """Renvoie un message d'erreur, ou None si le mot de passe est valide."""
+    if mdp != confirmation:
+        return "Les deux mots de passe ne correspondent pas."
+    if len(mdp) < 8:
+        return "Le mot de passe doit faire au moins 8 caractères."
+    if len(mdp.encode("utf-8")) > 72:  # limite bcrypt (octets, pas caractères)
+        return "Mot de passe trop long (limite : 72 octets)."
+    return None
+
+
+def _utilisateur_pour_reset(jeton: str, db: Session) -> Utilisateur | None:
+    """Résout un jeton de reset en utilisateur ; None si invalide/expiré/déjà utilisé.
+    L'empreinte lie le jeton au hash courant → un jeton devient caduc dès le 1er reset."""
+    decode = decoder_jeton_reset(jeton)
+    if decode is None:
+        return None
+    id_utilisateur, empreinte = decode
+    utilisateur = db.get(Utilisateur, id_utilisateur)
+    if utilisateur is None or empreinte_mot_de_passe(utilisateur.mot_de_passe) != empreinte:
+        return None
+    return utilisateur
 
 
 @router.post("/connexion", response_model=Jeton)
@@ -76,18 +86,22 @@ def connexion(
 
 @router.get("/verifier-email", response_class=HTMLResponse)
 def verifier_email(jeton: str = Query(...), db: Session = Depends(get_db)):
-    """Confirme l'adresse mail à partir du lien reçu, puis renvoie une page
-    qui rouvre l'app (deep link). Idempotent."""
+    """Confirme l'adresse mail à partir du lien reçu, puis renvoie une page de
+    confirmation. L'app détecte la vérification et connecte l'utilisateur. Idempotent."""
     id_utilisateur = decoder_jeton_verification(jeton)
     utilisateur = db.get(Utilisateur, id_utilisateur) if id_utilisateur is not None else None
     if utilisateur is None:
-        return HTMLResponse(_page_verification(succes=False),
-                            status_code=status.HTTP_400_BAD_REQUEST)
+        return HTMLResponse(
+            _page_resultat("⚠️", "Lien invalide ou expiré",
+                           "Ce lien de vérification n'est plus valable. Ouvre l'app et demande un nouveau lien."),
+            status_code=status.HTTP_400_BAD_REQUEST)
 
     if not utilisateur.est_verifie:
         utilisateur.est_verifie = True
         db.commit()
-    return HTMLResponse(_page_verification(succes=True))
+    return HTMLResponse(_page_resultat(
+        "✅", "Adresse vérifiée",
+        "Ton compte est activé. Retourne dans l'application SyncWatch : tu vas être connecté automatiquement."))
 
 
 @router.post("/renvoyer-verification", status_code=status.HTTP_202_ACCEPTED)
@@ -107,3 +121,60 @@ def renvoyer_verification(
                         utilisateur.adresse_mail, utilisateur.pseudo, jeton)
     return {"message": "Si un compte non vérifié existe pour cette adresse, "
                        "un nouveau mail de confirmation vient d'être envoyé."}
+
+
+@router.post("/mot-de-passe-oublie", status_code=status.HTTP_202_ACCEPTED)
+def mot_de_passe_oublie(
+    demande: DemandeReinitialisation,
+    taches: BackgroundTasks,
+    db: Session = Depends(get_db),
+    envoyeur: Envoyeur = Depends(envoyeur_mail),
+):
+    """Envoie un lien de réinitialisation. Réponse générique (anti-énumération)."""
+    utilisateur = db.scalar(select(Utilisateur).where(
+        Utilisateur.adresse_mail == demande.adresse_mail))
+    if utilisateur is not None:
+        jeton = creer_jeton_reset(utilisateur.id_utilisateur, utilisateur.mot_de_passe)
+        taches.add_task(envoyer_mail_reset, envoyeur,
+                        utilisateur.adresse_mail, utilisateur.pseudo, jeton)
+    return {"message": "Si un compte existe pour cette adresse, "
+                       "un mail de réinitialisation vient d'être envoyé."}
+
+
+@router.get("/reinitialiser-mot-de-passe", response_class=HTMLResponse)
+def formulaire_reset(jeton: str = Query(...), db: Session = Depends(get_db)):
+    """Page web : formulaire de saisie du nouveau mot de passe (ouverte depuis le mail)."""
+    utilisateur = _utilisateur_pour_reset(jeton, db)
+    if utilisateur is None:
+        return HTMLResponse(
+            _page_resultat("⚠️", "Lien invalide ou expiré",
+                           "Ce lien de réinitialisation n'est plus valable. Refais une demande depuis l'app."),
+            status_code=status.HTTP_400_BAD_REQUEST)
+    return HTMLResponse(_page_reset_formulaire(jeton))
+
+
+@router.post("/reinitialiser-mot-de-passe", response_class=HTMLResponse)
+def reinitialiser_mot_de_passe(
+    jeton: str = Form(...),
+    mot_de_passe: str = Form(...),
+    confirmation: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Traite le formulaire : valide, change le mot de passe (invalide le jeton), confirme."""
+    utilisateur = _utilisateur_pour_reset(jeton, db)
+    if utilisateur is None:
+        return HTMLResponse(
+            _page_resultat("⚠️", "Lien invalide ou expiré",
+                           "Ce lien de réinitialisation n'est plus valable. Refais une demande depuis l'app."),
+            status_code=status.HTTP_400_BAD_REQUEST)
+
+    erreur = _valider_mot_de_passe(mot_de_passe, confirmation)
+    if erreur is not None:
+        return HTMLResponse(_page_reset_formulaire(jeton, erreur=erreur),
+                            status_code=status.HTTP_400_BAD_REQUEST)
+
+    utilisateur.mot_de_passe = hacher_mot_de_passe(mot_de_passe)
+    db.commit()
+    return HTMLResponse(_page_resultat(
+        "✅", "Mot de passe modifié",
+        "Ton mot de passe a été changé. Retourne dans l'app SyncWatch et connecte-toi."))

@@ -9,6 +9,7 @@ from typing import Protocol
 import httpx
 
 from core.config import settings
+from core.gabarits import contenus_emails, rendre, substituer
 
 journal = logging.getLogger(__name__)
 
@@ -100,70 +101,46 @@ def construire_lien_verification(jeton: str) -> str:
     return f"{settings.URL_BASE_API}/auth/verifier-email?jeton={jeton}"
 
 
-def _corps_html_verification(pseudo: str, lien: str) -> str:
-    """Email HTML (tableaux + styles inline pour la compatibilité clients mail)."""
-    pseudo_echappe = html.escape(pseudo)
-    return f"""\
-<!doctype html>
-<html lang="fr">
-<body style="margin:0;padding:0;background:#0F172A;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
-         style="background:#0F172A;padding:32px 12px;font-family:Arial,Helvetica,sans-serif;">
-    <tr><td align="center">
-      <table role="presentation" width="480" cellpadding="0" cellspacing="0"
-             style="max-width:480px;width:100%;background:#1E293B;border-radius:16px;padding:32px;">
-        <tr><td align="center" style="font-size:26px;font-weight:bold;color:#F1F5F9;padding-bottom:8px;">
-          Sync<span style="color:#8B5CF6;">Watch</span>
-        </td></tr>
-        <tr><td align="center" style="font-size:19px;font-weight:bold;color:#F1F5F9;padding:16px 0 8px;">
-          Confirme ton adresse mail
-        </td></tr>
-        <tr><td align="center" style="font-size:14px;line-height:21px;color:#94A3B8;padding-bottom:26px;">
-          Bonjour {pseudo_echappe}, bienvenue sur SyncWatch !<br>
-          Active ton compte en cliquant sur le bouton ci-dessous.
-        </td></tr>
-        <tr><td align="center" style="padding-bottom:26px;">
-          <a href="{lien}"
-             style="display:inline-block;background:#8B5CF6;color:#ffffff;text-decoration:none;
-                    font-size:15px;font-weight:bold;padding:14px 30px;border-radius:12px;">
-            Vérifier mon compte
-          </a>
-        </td></tr>
-        <tr><td align="center" style="font-size:12px;line-height:18px;color:#64748B;">
-          Ce lien expire dans {settings.DUREE_JETON_VERIF_HEURES} heures.<br>
-          Si le bouton ne fonctionne pas, copie ce lien dans ton navigateur :<br>
-          <a href="{lien}" style="color:#22D3EE;word-break:break-all;">{lien}</a>
-        </td></tr>
-      </table>
-      <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;">
-        <tr><td align="center" style="font-size:11px;color:#475569;padding-top:16px;
-                 font-family:Arial,Helvetica,sans-serif;">
-          Tu n'es pas à l'origine de cette inscription ? Ignore ce message.
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>"""
+def construire_lien_reset(jeton: str) -> str:
+    return f"{settings.URL_BASE_API}/auth/reinitialiser-mot-de-passe?jeton={jeton}"
+
+
+def _corps_html_bouton(pseudo: str, titre: str, intro: str, texte_bouton: str,
+                       lien: str, note_expiration: str, pied: str) -> str:
+    """Email HTML générique à bouton (gabarit templates/email_bouton.html)."""
+    return rendre("email_bouton.html", pseudo=html.escape(pseudo), titre=titre,
+                  intro=intro, texte_bouton=texte_bouton, lien=lien,
+                  note_expiration=note_expiration, pied=pied)
+
+
+def _envoyer_mail(envoyeur: Envoyeur, cle: str, destinataire: str,
+                  pseudo: str, lien: str, duree: int) -> None:
+    """Compose et envoie un mail transactionnel dont la copie vit dans templates/emails.toml.
+    Ne propage pas les erreurs (tâche de fond : un backend mail KO ne doit pas remonter)."""
+    contenu = contenus_emails()[cle]
+    ctx = {"pseudo": pseudo, "lien": lien, "duree": str(duree)}
+    corps_texte = substituer(contenu["texte"], **ctx)
+    corps_html = _corps_html_bouton(
+        pseudo, contenu["titre"], substituer(contenu["intro"], **ctx),
+        contenu["bouton"], lien,
+        substituer(contenu["note"], **ctx), substituer(contenu["pied"], **ctx))
+    try:
+        envoyeur.envoyer(destinataire, contenu["sujet"], corps_texte, corps_html)
+    except Exception:  # noqa: BLE001 — on journalise (niveau ERROR, visible) sans interrompre le flux
+        journal.exception("Échec de l'envoi du mail (%s) à %s", cle, destinataire)
 
 
 def envoyer_mail_verification(
     envoyeur: Envoyeur, destinataire: str, pseudo: str, jeton: str
 ) -> None:
-    """Compose et envoie le mail de confirmation (bouton HTML + lien texte de repli).
-    Ne propage pas les erreurs d'envoi (typiquement lancé en tâche de fond :
-    un SMTP indisponible ne doit pas remonter)."""
-    lien = construire_lien_verification(jeton)
-    sujet = "Confirmez votre adresse mail SyncWatch"
-    corps_texte = (
-        f"Bonjour {pseudo},\n\n"
-        "Bienvenue sur SyncWatch ! Confirmez votre adresse mail en ouvrant ce lien :\n\n"
-        f"{lien}\n\n"
-        f"Ce lien expire dans {settings.DUREE_JETON_VERIF_HEURES} heures.\n"
-        "Si vous n'êtes pas à l'origine de cette inscription, ignorez ce message."
-    )
-    corps_html = _corps_html_verification(pseudo, lien)
-    try:
-        envoyeur.envoyer(destinataire, sujet, corps_texte, corps_html)
-    except Exception:  # noqa: BLE001 — on journalise (niveau ERROR, visible) sans interrompre le flux
-        journal.exception("Échec de l'envoi du mail de vérification à %s", destinataire)
+    """Mail de confirmation d'adresse (copie : section [verification] de emails.toml)."""
+    _envoyer_mail(envoyeur, "verification", destinataire, pseudo,
+                  construire_lien_verification(jeton), settings.DUREE_JETON_VERIF_HEURES)
+
+
+def envoyer_mail_reset(
+    envoyeur: Envoyeur, destinataire: str, pseudo: str, jeton: str
+) -> None:
+    """Mail de réinitialisation de mot de passe (copie : section [reset] de emails.toml)."""
+    _envoyer_mail(envoyeur, "reset", destinataire, pseudo,
+                  construire_lien_reset(jeton), settings.DUREE_JETON_RESET_MINUTES)

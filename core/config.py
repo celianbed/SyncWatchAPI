@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     # Vérification d'adresse mail
     URL_BASE_API: str = "http://localhost:8000"  # sert à construire le lien de vérification
     DUREE_JETON_VERIF_HEURES: int = 48
+    DUREE_JETON_RESET_MINUTES: int = 30  # lien « mot de passe oublié » : court par sécurité
     MAIL_EXPEDITEUR: str = "no-reply@syncwatch.app"  # « From » des mails (validé chez Brevo)
 
     # Envoi via l'API HTTP de Brevo (port 443) — recommandé sur Render/PaaS qui filtrent le SMTP.

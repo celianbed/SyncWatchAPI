@@ -1,0 +1,38 @@
+# templates/emails.toml — copie des emails transactionnels SyncWatch.
+# Modifiable sans toucher au code. Placeholders disponibles : $pseudo, $lien, $duree.
+
+[verification]
+sujet = "Confirmez votre adresse mail SyncWatch"
+titre = "Confirme ton adresse mail"
+intro = "Bienvenue sur SyncWatch ! Active ton compte en cliquant sur le bouton ci-dessous."
+bouton = "Vérifier mon compte"
+note = "Ce lien expire dans $duree heures."
+pied = "Tu n'es pas à l'origine de cette inscription ? Ignore ce message."
+texte = """
+Bonjour $pseudo,
+
+Bienvenue sur SyncWatch ! Confirme ton adresse mail en ouvrant ce lien :
+
+$lien
+
+Ce lien expire dans $duree heures.
+Si tu n'es pas à l'origine de cette inscription, ignore ce message.
+"""
+
+[reset]
+sujet = "Réinitialisation de votre mot de passe SyncWatch"
+titre = "Réinitialise ton mot de passe"
+intro = "Tu as demandé à réinitialiser ton mot de passe. Clique sur le bouton ci-dessous pour en choisir un nouveau."
+bouton = "Réinitialiser mon mot de passe"
+note = "Ce lien expire dans $duree minutes."
+pied = "Tu n'es pas à l'origine de cette demande ? Ignore ce message, ton mot de passe reste inchangé."
+texte = """
+Bonjour $pseudo,
+
+Tu as demandé à réinitialiser ton mot de passe. Ouvre ce lien pour en choisir un nouveau :
+
+$lien
+
+Ce lien expire dans $duree minutes.
+Si tu n'es pas à l'origine de cette demande, ignore ce message : ton mot de passe reste inchangé.
+"""

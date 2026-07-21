@@ -176,3 +176,79 @@ def test_renvoyer_verification_deja_verifie_pas_de_mail(client, inscrire, envoye
                           json={"adresse_mail": DONNEES_INSCRIPTION["adresse_mail"]})
     assert reponse.status_code == 202
     assert envoyeur.messages == []
+
+
+# --- Mot de passe oublié / réinitialisation ---
+
+def demander_reset(client, mail=DONNEES_INSCRIPTION["adresse_mail"]):
+    return client.post("/auth/mot-de-passe-oublie", json={"adresse_mail": mail})
+
+
+def test_mot_de_passe_oublie_envoie_mail(client, inscrire, envoyeur):
+    inscrire()
+    envoyeur.messages.clear()
+    reponse = demander_reset(client)
+    assert reponse.status_code == 202
+    assert len(envoyeur.messages) == 1
+    _, _, corps_texte, corps_html = envoyeur.messages[0]
+    assert "/auth/reinitialiser-mot-de-passe?jeton=" in corps_texte
+    assert "Réinitialiser mon mot de passe" in corps_html
+
+
+def test_mot_de_passe_oublie_compte_inconnu_ne_revele_rien(client, envoyeur):
+    reponse = demander_reset(client, "inconnu@example.com")
+    assert reponse.status_code == 202     # même réponse qu'un compte existant
+    assert envoyeur.messages == []        # mais aucun mail envoyé
+
+
+def test_reinitialiser_formulaire_jeton_valide(client, inscrire, envoyeur):
+    inscrire()
+    demander_reset(client)
+    jeton = jeton_du_dernier_mail(envoyeur)
+    reponse = client.get("/auth/reinitialiser-mot-de-passe", params={"jeton": jeton})
+    assert reponse.status_code == 200
+    assert "text/html" in reponse.headers["content-type"]
+    assert 'name="mot_de_passe"' in reponse.text  # le formulaire est bien rendu
+
+
+def test_reinitialiser_formulaire_jeton_invalide(client):
+    assert client.get("/auth/reinitialiser-mot-de-passe",
+                      params={"jeton": "bidon"}).status_code == 400
+
+
+def test_reinitialiser_change_mot_de_passe(client, inscrire, envoyeur):
+    inscrire()
+    demander_reset(client)
+    jeton = jeton_du_dernier_mail(envoyeur)
+    reponse = client.post("/auth/reinitialiser-mot-de-passe", data={
+        "jeton": jeton, "mot_de_passe": "nouveaumdp456", "confirmation": "nouveaumdp456"})
+    assert reponse.status_code == 200
+    assert "modifié" in reponse.text
+    # le nouveau mot de passe fonctionne, l'ancien non
+    assert se_connecter(client, DONNEES_INSCRIPTION["pseudo"], "nouveaumdp456").status_code == 200
+    assert se_connecter(client, DONNEES_INSCRIPTION["pseudo"]).status_code == 401
+
+
+def test_reinitialiser_confirmation_differente(client, inscrire, envoyeur):
+    inscrire()
+    demander_reset(client)
+    jeton = jeton_du_dernier_mail(envoyeur)
+    reponse = client.post("/auth/reinitialiser-mot-de-passe", data={
+        "jeton": jeton, "mot_de_passe": "nouveaumdp456", "confirmation": "autremdp789"})
+    assert reponse.status_code == 400
+    # mot de passe inchangé : l'ancien fonctionne toujours
+    assert se_connecter(client, DONNEES_INSCRIPTION["pseudo"]).status_code == 200
+
+
+def test_reinitialiser_jeton_usage_unique(client, inscrire, envoyeur):
+    inscrire()
+    demander_reset(client)
+    jeton = jeton_du_dernier_mail(envoyeur)
+    ok = client.post("/auth/reinitialiser-mot-de-passe", data={
+        "jeton": jeton, "mot_de_passe": "nouveaumdp456", "confirmation": "nouveaumdp456"})
+    assert ok.status_code == 200
+    # rejouer le même lien après changement de mot de passe → invalidé
+    assert client.get("/auth/reinitialiser-mot-de-passe", params={"jeton": jeton}).status_code == 400
+    rejoue = client.post("/auth/reinitialiser-mot-de-passe", data={
+        "jeton": jeton, "mot_de_passe": "encoreautre999", "confirmation": "encoreautre999"})
+    assert rejoue.status_code == 400

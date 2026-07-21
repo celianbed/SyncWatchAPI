@@ -25,6 +25,12 @@ class DemandeVerification(BaseModel):
     adresse_mail: EmailStr
 
 
+class DemandeReinitialisation(BaseModel):
+    """Demande d'un lien de réinitialisation de mot de passe."""
+
+    adresse_mail: EmailStr
+
+
 class UtilisateurMaj(BaseModel):
     """Mise à jour partielle du profil — les champs absents restent inchangés."""
 
