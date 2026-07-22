@@ -31,6 +31,12 @@ class DemandeReinitialisation(BaseModel):
     adresse_mail: EmailStr
 
 
+class ConnexionGoogle(BaseModel):
+    """id_token Google (obtenu par l'app via google_sign_in) à vérifier côté API."""
+
+    id_token: str = Field(min_length=1)
+
+
 class UtilisateurMaj(BaseModel):
     """Mise à jour partielle du profil — les champs absents restent inchangés."""
 

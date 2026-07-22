@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # Push FCM (Android) : JSON du compte de service Firebase. Vide = pas de push (mode journal).
     FIREBASE_CREDENTIALS_JSON: str = ""
 
+    # Connexion Google : ID du client OAuth « Web » (audience du id_token à vérifier).
+    GOOGLE_CLIENT_ID: str = ""
+
     # Secret exigé par /taches/* (déclenchement par un cron externe en prod)
     CRON_SECRET: str = ""
 

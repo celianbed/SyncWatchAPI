@@ -252,3 +252,71 @@ def test_reinitialiser_jeton_usage_unique(client, inscrire, envoyeur):
     rejoue = client.post("/auth/reinitialiser-mot-de-passe", data={
         "jeton": jeton, "mot_de_passe": "encoreautre999", "confirmation": "encoreautre999"})
     assert rejoue.status_code == 400
+
+
+# --- Connexion Google ---
+
+def _config_google(monkeypatch, payload):
+    """Configure GOOGLE_CLIENT_ID + simule la vérification du id_token Google."""
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "test-client-id")
+    monkeypatch.setattr("api.auth._verifier_token_google", lambda _t: payload)
+
+
+def test_google_cree_un_compte(client, monkeypatch):
+    _config_google(monkeypatch, {
+        "email": "nouveau@example.com", "email_verified": True, "given_name": "Léa"})
+    reponse = client.post("/auth/google", json={"id_token": "peu-importe"})
+    assert reponse.status_code == 200
+    assert reponse.json()["access_token"]
+
+
+def test_google_compte_verifie_sans_mdp(client, db, monkeypatch):
+    _config_google(monkeypatch, {
+        "email": "lea@example.com", "email_verified": True, "given_name": "Léa"})
+    client.post("/auth/google", json={"id_token": "x"})
+    u = db.scalar(select(Utilisateur).where(Utilisateur.adresse_mail == "lea@example.com"))
+    assert u is not None and u.est_verifie is True and u.mot_de_passe is None
+    assert len(u.pseudo) >= 3
+
+
+def test_google_lie_le_compte_existant(client, inscrire, db, monkeypatch):
+    inscrire(verifier=False)  # compte au mot de passe, non vérifié
+    id_avant = db.scalar(select(Utilisateur.id_utilisateur).where(
+        Utilisateur.adresse_mail == DONNEES_INSCRIPTION["adresse_mail"]))
+    _config_google(monkeypatch, {
+        "email": DONNEES_INSCRIPTION["adresse_mail"], "email_verified": True,
+        "given_name": "Celian"})
+    assert client.post("/auth/google", json={"id_token": "x"}).status_code == 200
+    comptes = db.scalars(select(Utilisateur).where(
+        Utilisateur.adresse_mail == DONNEES_INSCRIPTION["adresse_mail"])).all()
+    assert len(comptes) == 1                       # pas de doublon
+    assert comptes[0].id_utilisateur == id_avant   # même compte
+    assert comptes[0].est_verifie is True          # vérifié par Google
+
+
+def test_google_token_invalide(client, monkeypatch):
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "test-client-id")
+
+    def _lever(_t):
+        raise ValueError("bad token")
+    monkeypatch.setattr("api.auth._verifier_token_google", _lever)
+    assert client.post("/auth/google", json={"id_token": "faux"}).status_code == 401
+
+
+def test_google_email_non_verifie_refuse(client, monkeypatch):
+    _config_google(monkeypatch, {"email": "x@example.com", "email_verified": False})
+    assert client.post("/auth/google", json={"id_token": "x"}).status_code == 401
+
+
+def test_google_non_configure(client, monkeypatch):
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "")
+    assert client.post("/auth/google", json={"id_token": "x"}).status_code == 503
+
+
+def test_connexion_mdp_refusee_pour_compte_google(client, monkeypatch):
+    # un compte Google (sans mot de passe) ne peut pas se connecter par mot de passe
+    _config_google(monkeypatch, {
+        "email": "social@example.com", "email_verified": True, "given_name": "Sam"})
+    client.post("/auth/google", json={"id_token": "x"})
+    reponse = se_connecter(client, "social@example.com", "nimportequoi")
+    assert reponse.status_code == 401  # pas 500

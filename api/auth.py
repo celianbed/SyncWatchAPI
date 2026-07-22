@@ -1,14 +1,18 @@
 # api/auth.py
 import html
+import re
 
 from fastapi import (APIRouter, BackgroundTasks, Depends, Form, HTTPException,
                      Query, status)
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.dependances import envoyeur_mail
+from core.config import settings
 from core.gabarits import rendre
 from core.securite import (creer_jeton_acces, creer_jeton_reset,
                            creer_jeton_verification, decoder_jeton_reset,
@@ -17,7 +21,8 @@ from core.securite import (creer_jeton_acces, creer_jeton_reset,
 from db.database import get_db
 from models import Utilisateur
 from schemas.jeton import Jeton
-from schemas.utilisateur import DemandeReinitialisation, DemandeVerification
+from schemas.utilisateur import (ConnexionGoogle, DemandeReinitialisation,
+                                    DemandeVerification)
 from services.email_service import (Envoyeur, envoyer_mail_reset,
                                     envoyer_mail_verification)
 
@@ -84,6 +89,64 @@ def connexion(
     return Jeton(access_token=creer_jeton_acces(utilisateur.id_utilisateur))
 
 
+def _verifier_token_google(id_token_str: str) -> dict:
+    """Vérifie le id_token Google (signature Google + audience). ValueError si invalide."""
+    return google_id_token.verify_oauth2_token(
+        id_token_str, google_requests.Request(), settings.GOOGLE_CLIENT_ID)
+
+
+def _pseudo_unique(db: Session, base: str) -> str:
+    """Dérive un pseudo valide (3-30, alphanumérique) et unique depuis un nom Google."""
+    pseudo = re.sub(r"[^A-Za-z0-9_]", "", base)[:30]
+    if len(pseudo) < 3:
+        pseudo = (pseudo + "membre")[:30]
+    candidat, i = pseudo, 1
+    while db.scalar(select(Utilisateur.id_utilisateur).where(Utilisateur.pseudo == candidat)):
+        suffixe = str(i)
+        candidat = pseudo[:30 - len(suffixe)] + suffixe
+        i += 1
+    return candidat
+
+
+@router.post("/google", response_model=Jeton)
+def connexion_google(donnees: ConnexionGoogle, db: Session = Depends(get_db)):
+    """Connexion / inscription via Google : vérifie le id_token, lie au compte du
+    même email s'il existe, sinon crée un compte (sans mot de passe, déjà vérifié)."""
+    if not settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            "Connexion Google non configurée.")
+    try:
+        infos = _verifier_token_google(donnees.id_token)
+    except ValueError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Jeton Google invalide",
+                            headers={"WWW-Authenticate": "Bearer"})
+
+    email = infos.get("email")
+    if not email or not infos.get("email_verified"):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED,
+                            "Compte Google sans adresse mail vérifiée")
+
+    utilisateur = db.scalar(select(Utilisateur).where(Utilisateur.adresse_mail == email))
+    if utilisateur is None:  # premier passage : création du compte
+        utilisateur = Utilisateur(
+            adresse_mail=email,
+            pseudo=_pseudo_unique(
+                db, infos.get("given_name") or infos.get("name") or email.split("@")[0]),
+            mot_de_passe=None,
+            est_verifie=True,
+        )
+        db.add(utilisateur)
+        db.flush()
+
+    if utilisateur.statut_compte != "actif":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Compte suspendu ou supprimé")
+
+    utilisateur.est_verifie = True  # Google a validé l'email → compte marqué vérifié
+    utilisateur.date_derniere_connexion = func.now()
+    db.commit()
+    return Jeton(access_token=creer_jeton_acces(utilisateur.id_utilisateur))
+
+
 @router.get("/verifier-email", response_class=HTMLResponse)
 def verifier_email(jeton: str = Query(...), db: Session = Depends(get_db)):
     """Confirme l'adresse mail à partir du lien reçu, puis renvoie une page de
@@ -133,7 +196,8 @@ def mot_de_passe_oublie(
     """Envoie un lien de réinitialisation. Réponse générique (anti-énumération)."""
     utilisateur = db.scalar(select(Utilisateur).where(
         Utilisateur.adresse_mail == demande.adresse_mail))
-    if utilisateur is not None:
+    # pas de reset pour un compte Google (sans mot de passe) : rien à réinitialiser
+    if utilisateur is not None and utilisateur.mot_de_passe is not None:
         jeton = creer_jeton_reset(utilisateur.id_utilisateur, utilisateur.mot_de_passe)
         taches.add_task(envoyer_mail_reset, envoyeur,
                         utilisateur.adresse_mail, utilisateur.pseudo, jeton)

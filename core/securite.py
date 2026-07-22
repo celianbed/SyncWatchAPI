@@ -12,7 +12,11 @@ def hacher_mot_de_passe(mot_de_passe: str) -> str:
     return bcrypt.hashpw(mot_de_passe.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
-def verifier_mot_de_passe(mot_de_passe: str, hash_stocke: str) -> bool:
+def verifier_mot_de_passe(mot_de_passe: str, hash_stocke: str | None) -> bool:
+    # hash None = compte sans mot de passe (créé via Google) : la connexion par
+    # mot de passe échoue toujours pour ces comptes.
+    if not hash_stocke:
+        return False
     return bcrypt.checkpw(mot_de_passe.encode("utf-8"), hash_stocke.encode("utf-8"))
 
 

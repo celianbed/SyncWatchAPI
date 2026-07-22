@@ -18,7 +18,8 @@ class Utilisateur(Base):
 
     id_utilisateur: Mapped[int] = mapped_column(primary_key=True)
     adresse_mail: Mapped[str] = mapped_column(String(255), unique=True)
-    mot_de_passe: Mapped[str] = mapped_column(String(255))  # hash bcrypt/argon2
+    # null = compte créé via un fournisseur externe (Google) : pas de mot de passe
+    mot_de_passe: Mapped[str | None] = mapped_column(String(255))
     pseudo: Mapped[str] = mapped_column(String(30), unique=True)
     avatar: Mapped[str | None] = mapped_column(String(500))
     date_inscription: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
