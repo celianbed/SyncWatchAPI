@@ -28,6 +28,9 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/sync_watch
       SECRET_KEY: cle-de-test-ci-non-secrete
+      # Jeton factice : les tests TMDB passent par un transport simulé (aucun appel
+      # réseau) mais vérifient la présence de l'en-tête Authorization: Bearer.
+      TMDB_API_TOKEN: jeton-tmdb-de-test-ci
       RATE_LIMIT_ACTIF: "false"
       NOTIFICATIONS_PLANIFIEES: "false"
 
