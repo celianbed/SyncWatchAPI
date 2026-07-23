@@ -17,6 +17,15 @@ lire_url() { grep -m1 '^DATABASE_URL=' "$1" | cut -d= -f2-; }
 URL_PROD="$(lire_url .env.prod)"
 URL_LOCAL="$(lire_url .env)"
 
+# GARDE-FOU : ce script ÉCRIT dans URL_LOCAL (restauration --clean = DROP puis recréation).
+# On refuse catégoriquement si la cible ressemble à une base distante / de prod : c'est
+# exactement ce qui a détruit la prod une fois (restauration pointée sur Neon par erreur).
+if echo "$URL_LOCAL" | grep -qiE "neon\.tech|render\.com|amazonaws|\.cloud"; then
+  echo "STOP : la CIBLE (URL_LOCAL) ressemble à une base distante/prod." >&2
+  echo "       Ce script ne restaure QUE dans une base locale. Abandon." >&2
+  exit 1
+fi
+
 masquer() { echo "$1" | sed -E 's#(://[^:/@]+:)[^@]+(@)#\1***\2#'; }
 
 echo "Source (prod)  : $(masquer "$URL_PROD")"

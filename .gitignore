@@ -29,3 +29,4 @@ test.db
 .*.sw?
 .cache
 .claude
+backups/
