@@ -66,3 +66,17 @@ def test_nouveautes_type_requis(client):
     assert client.get("/search/nouveautes").status_code == 422
     assert client.get("/search/nouveautes",
                       params={"type": "musique"}).status_code == 422
+
+
+def test_rate_limit_recherche(client):
+    """La recherche est publique et coûte un appel TMDB : elle doit être plafonnée
+    pour qu'on ne puisse pas brûler le quota TMDB en la martelant."""
+    from core.limitation import limiteur
+    limiteur.enabled = True
+    limiteur.reset()
+    try:
+        codes = [client.get("/search/tendances").status_code for _ in range(35)]
+    finally:
+        limiteur.enabled = False
+        limiteur.reset()
+    assert 429 in codes

@@ -1,9 +1,10 @@
 # api/recherche.py
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from api.dependances import client_tmdb
+from core.limitation import LIMITE_RECHERCHE, limiteur
 from schemas.recherche import ResultatRecherche
 from services.tmdb_client import ClientTMDB
 
@@ -22,7 +23,9 @@ def _mapper_multi(donnees: dict | None) -> list[ResultatRecherche]:
 
 
 @router.get("", response_model=list[ResultatRecherche])
+@limiteur.limit(LIMITE_RECHERCHE)  # public + coûte un appel TMDB
 async def rechercher(
+    request: Request,
     q: str = Query(min_length=1, description="Titre de série ou de film"),
     tmdb: ClientTMDB = Depends(client_tmdb),
 ):
@@ -31,13 +34,16 @@ async def rechercher(
 
 
 @router.get("/tendances", response_model=list[ResultatRecherche])
-async def tendances(tmdb: ClientTMDB = Depends(client_tmdb)):
+@limiteur.limit(LIMITE_RECHERCHE)
+async def tendances(request: Request, tmdb: ClientTMDB = Depends(client_tmdb)):
     """Séries et films en tendance cette semaine — alimente l'écran découverte."""
     return _mapper_multi(await tmdb.tendances())
 
 
 @router.get("/nouveautes", response_model=list[ResultatRecherche])
+@limiteur.limit(LIMITE_RECHERCHE)
 async def nouveautes(
+    request: Request,
     type: Literal["serie", "film"] = Query(
         description="serie = à l'antenne cette semaine, film = en salles"),
     tmdb: ClientTMDB = Depends(client_tmdb),

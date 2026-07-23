@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from api import (accueil, auth, avis, calendrier, films, notifications,
                      recherche, series, stats, taches, utilisateurs, visionnage)
-from core.config import settings
+from core.config import SECRET_KEY_PAR_DEFAUT, settings
+from core.limitation import brancher_limitation
 from db.database import get_db
 from services import notification_service
 from services.tmdb_client import ClientTMDB
@@ -17,6 +18,13 @@ from services.tmdb_client import ClientTMDB
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Refus de démarrer avec la clé de signature par défaut : elle est publique
+    # (dans le dépôt), donc n'importe qui pourrait forger un jeton d'accès.
+    if settings.SECRET_KEY == SECRET_KEY_PAR_DEFAUT:
+        raise RuntimeError(
+            "SECRET_KEY non configurée : définissez-la dans .env (local) ou dans "
+            "les variables d'environnement (production).")
+
     # un seul client TMDB pour toute la vie de l'app (réutilise les connexions)
     app.state.tmdb = ClientTMDB()
 
@@ -48,6 +56,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Limitation de débit : renvoie 429 au-delà des quotas (cf. core/limitation.py)
+brancher_limitation(app)
 
 
 @app.get("/", tags=["sante"])

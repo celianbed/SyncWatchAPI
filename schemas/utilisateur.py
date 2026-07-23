@@ -4,9 +4,13 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
+# lettres (accents compris), chiffres, _ . - et espace : pas de < > " ' & (injection)
+MOTIF_PSEUDO = r"^[\w .\-]+$"
+
+
 class UtilisateurCreation(BaseModel):
     adresse_mail: EmailStr
-    pseudo: str = Field(min_length=3, max_length=30)
+    pseudo: str = Field(min_length=3, max_length=30, pattern=MOTIF_PSEUDO)
     mot_de_passe: str = Field(min_length=8)
 
     @field_validator("mot_de_passe")
@@ -40,13 +44,14 @@ class ConnexionGoogle(BaseModel):
 class UtilisateurMaj(BaseModel):
     """Mise à jour partielle du profil — les champs absents restent inchangés."""
 
-    pseudo: str | None = Field(default=None, min_length=3, max_length=30)
+    pseudo: str | None = Field(default=None, min_length=3, max_length=30,
+                               pattern=MOTIF_PSEUDO)
     # URL d'image ; null explicite = retirer l'avatar
     avatar: str | None = Field(default=None, max_length=500)
 
 
 class UtilisateurPublic(BaseModel):
-    """Représentation renvoyée par l'API — jamais le mot de passe."""
+    """Profil complet — réservé à SON propriétaire (/utilisateurs/moi)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -57,3 +62,14 @@ class UtilisateurPublic(BaseModel):
     date_inscription: datetime
     statut_compte: str
     est_verifie: bool
+
+
+class UtilisateurProfil(BaseModel):
+    """Profil d'un AUTRE utilisateur : jamais l'adresse mail (fuite de données)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id_utilisateur: int
+    pseudo: str
+    avatar: str | None
+    date_inscription: datetime

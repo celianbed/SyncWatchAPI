@@ -3,7 +3,7 @@ import html
 import re
 
 from fastapi import (APIRouter, BackgroundTasks, Depends, Form, HTTPException,
-                     Query, status)
+                     Query, Request, status)
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from google.auth.transport import requests as google_requests
@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from api.dependances import envoyeur_mail
 from core.config import settings
 from core.gabarits import rendre
+from core.limitation import (LIMITE_CONNEXION, LIMITE_ENVOI_MAIL, limiteur)
 from core.securite import (creer_jeton_acces, creer_jeton_reset,
                            creer_jeton_verification, decoder_jeton_reset,
                            decoder_jeton_verification, empreinte_mot_de_passe,
@@ -66,7 +67,9 @@ def _utilisateur_pour_reset(jeton: str, db: Session) -> Utilisateur | None:
 
 
 @router.post("/connexion", response_model=Jeton)
+@limiteur.limit(LIMITE_CONNEXION)  # anti brute-force
 def connexion(
+    request: Request,
     identifiants: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
 ):
     """Connexion par adresse mail ou pseudo (champ `username` de la spec OAuth2)."""
@@ -109,7 +112,9 @@ def _pseudo_unique(db: Session, base: str) -> str:
 
 
 @router.post("/google", response_model=Jeton)
-def connexion_google(donnees: ConnexionGoogle, db: Session = Depends(get_db)):
+@limiteur.limit(LIMITE_CONNEXION)
+def connexion_google(request: Request, donnees: ConnexionGoogle,
+                     db: Session = Depends(get_db)):
     """Connexion / inscription via Google : vérifie le id_token, lie au compte du
     même email s'il existe, sinon crée un compte (sans mot de passe, déjà vérifié)."""
     if not settings.GOOGLE_CLIENT_ID:
@@ -168,7 +173,9 @@ def verifier_email(jeton: str = Query(...), db: Session = Depends(get_db)):
 
 
 @router.post("/renvoyer-verification", status_code=status.HTTP_202_ACCEPTED)
+@limiteur.limit(LIMITE_ENVOI_MAIL)  # anti email bombing / quota Brevo
 def renvoyer_verification(
+    request: Request,
     demande: DemandeVerification,
     taches: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -187,7 +194,9 @@ def renvoyer_verification(
 
 
 @router.post("/mot-de-passe-oublie", status_code=status.HTTP_202_ACCEPTED)
+@limiteur.limit(LIMITE_ENVOI_MAIL)  # anti email bombing / quota Brevo
 def mot_de_passe_oublie(
+    request: Request,
     demande: DemandeReinitialisation,
     taches: BackgroundTasks,
     db: Session = Depends(get_db),

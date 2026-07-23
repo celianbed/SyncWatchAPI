@@ -19,6 +19,30 @@ Ce lien expire dans $duree heures.
 Si tu n'es pas à l'origine de cette inscription, ignore ce message.
 """
 
+[compte_existant]
+# Envoyé quand quelqu'un tente de s'inscrire avec une adresse DÉJÀ enregistrée.
+# L'API répond la même chose que pour une inscription normale (anti-énumération) :
+# c'est ce mail qui informe le véritable propriétaire de l'adresse.
+sujet = "Tentative d'inscription avec votre adresse SyncWatch"
+titre = "Tu as déjà un compte"
+intro = "Quelqu'un vient d'essayer de créer un compte SyncWatch avec cette adresse. Tu en as déjà un : connecte-toi normalement, ou choisis un nouveau mot de passe si tu l'as oublié."
+bouton = "Choisir un nouveau mot de passe"
+note = "Ce lien expire dans $duree minutes."
+pied = "Ce n'était pas toi ? Ignore ce message, ton compte n'a pas été modifié."
+texte = """
+Bonjour $pseudo,
+
+Quelqu'un vient d'essayer de créer un compte SyncWatch avec cette adresse.
+Tu en as déjà un : connecte-toi normalement.
+
+Mot de passe oublié ? Choisis-en un nouveau ici :
+
+$lien
+
+Ce lien expire dans $duree minutes.
+Ce n'était pas toi ? Ignore ce message, ton compte n'a pas été modifié.
+"""
+
 [reset]
 sujet = "Réinitialisation de votre mot de passe SyncWatch"
 titre = "Réinitialise ton mot de passe"

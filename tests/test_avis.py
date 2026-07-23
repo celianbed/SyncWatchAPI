@@ -138,7 +138,8 @@ def test_modifier_avis_dautrui(client, jeton, jeton2, cibles):
                           json={"id_serie": cibles["id_serie"],
                                 "note": 8}).json()["id_avis"]
     reponse = client.patch(f"/avis/{id_avis}", headers=_entete(jeton2), json={"note": 1})
-    assert reponse.status_code == 403
+    # 404 (et non 403) : ne pas révéler l'existence de l'avis d'autrui
+    assert reponse.status_code == 404
 
 
 def test_supprimer_avis(client, jeton, cibles):
@@ -153,4 +154,4 @@ def test_supprimer_avis_dautrui(client, jeton, jeton2, cibles):
     id_avis = client.post("/avis", headers=_entete(jeton),
                           json={"id_serie": cibles["id_serie"],
                                 "note": 8}).json()["id_avis"]
-    assert client.delete(f"/avis/{id_avis}", headers=_entete(jeton2)).status_code == 403
+    assert client.delete(f"/avis/{id_avis}", headers=_entete(jeton2)).status_code == 404

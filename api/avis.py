@@ -24,10 +24,9 @@ def _verifier_cible(db: Session, donnees: AvisCreation) -> None:
 
 def _avis_du_proprietaire(db: Session, id_avis: int, utilisateur: Utilisateur) -> Avis:
     avis = db.get(Avis, id_avis)
-    if avis is None:
+    # 404 aussi pour l'avis d'un autre : ne pas révéler son existence
+    if avis is None or avis.id_utilisateur != utilisateur.id_utilisateur:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Avis introuvable.")
-    if avis.id_utilisateur != utilisateur.id_utilisateur:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Cet avis ne vous appartient pas.")
     return avis
 
 

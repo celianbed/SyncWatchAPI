@@ -254,6 +254,21 @@ def test_reinitialiser_jeton_usage_unique(client, inscrire, envoyeur):
     assert rejoue.status_code == 400
 
 
+def test_rate_limit_coupe_le_brute_force(client):
+    """Au-delà du quota, la connexion renvoie 429 : le brute-force est cassé."""
+    from core.limitation import limiteur
+    limiteur.enabled = True
+    limiteur.reset()
+    try:
+        # au-delà de LIMITE_CONNEXION (30/min) l'API doit couper
+        codes = [se_connecter(client, "inconnu@example.com", "mauvais").status_code
+                 for _ in range(35)]
+    finally:
+        limiteur.enabled = False
+        limiteur.reset()
+    assert 429 in codes
+
+
 # --- Connexion Google ---
 
 def _config_google(monkeypatch, payload):

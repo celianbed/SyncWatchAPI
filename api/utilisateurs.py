@@ -1,32 +1,54 @@
 # api/utilisateurs.py
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import (APIRouter, BackgroundTasks, Depends, HTTPException,
+                     Request, status)
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.dependances import envoyeur_mail, utilisateur_courant
-from core.securite import creer_jeton_verification, hacher_mot_de_passe
+from core.limitation import LIMITE_INSCRIPTION, limiteur
+from core.securite import (creer_jeton_reset, creer_jeton_verification,
+                           hacher_mot_de_passe)
 from db.database import get_db
 from models import (Film, Serie, SuivreFilm, SuivreSerie, Utilisateur,
                        VisionnerFilm)
 from schemas.recherche import ResultatRecherche
 from schemas.utilisateur import (UtilisateurCreation, UtilisateurMaj,
-                                     UtilisateurPublic)
-from services.email_service import Envoyeur, envoyer_mail_verification
+                                     UtilisateurProfil, UtilisateurPublic)
+from services.email_service import (Envoyeur, envoyer_mail_compte_existant,
+                                    envoyer_mail_verification)
 
 router = APIRouter()
 
 
-@router.post("", response_model=UtilisateurPublic, status_code=status.HTTP_201_CREATED)
+MESSAGE_INSCRIPTION = ("Si cette adresse peut être utilisée, un mail de confirmation "
+                       "vient d'être envoyé. Ouvre-le pour activer ton compte.")
+
+
+@router.post("", status_code=status.HTTP_202_ACCEPTED)
+@limiteur.limit(LIMITE_INSCRIPTION)  # anti création massive de comptes
 def inscrire(
+    request: Request,
     donnees: UtilisateurCreation,
     taches: BackgroundTasks,
     db: Session = Depends(get_db),
     envoyeur: Envoyeur = Depends(envoyeur_mail),
 ):
-    if db.scalar(select(Utilisateur).where(Utilisateur.adresse_mail == donnees.adresse_mail)):
-        raise HTTPException(status.HTTP_409_CONFLICT, "Cette adresse mail est déjà utilisée.")
+    """Inscription. La réponse est **identique** que l'adresse existe déjà ou non
+    (anti-énumération) : c'est le mail reçu qui diffère. Seul le pseudo, non
+    sensible et imposé à l'utilisateur, peut renvoyer un conflit explicite."""
     if db.scalar(select(Utilisateur).where(Utilisateur.pseudo == donnees.pseudo)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Ce pseudo est déjà pris.")
+
+    existant = db.scalar(select(Utilisateur).where(
+        Utilisateur.adresse_mail == donnees.adresse_mail))
+    if existant is not None:
+        # On ne crée rien et on ne le dit pas : on prévient le vrai propriétaire.
+        # (compte Google, sans mot de passe : rien à réinitialiser → pas de mail)
+        if existant.mot_de_passe is not None:
+            jeton_reset = creer_jeton_reset(existant.id_utilisateur, existant.mot_de_passe)
+            taches.add_task(envoyer_mail_compte_existant, envoyeur,
+                            existant.adresse_mail, existant.pseudo, jeton_reset)
+        return {"message": MESSAGE_INSCRIPTION}
 
     utilisateur = Utilisateur(
         adresse_mail=donnees.adresse_mail,
@@ -41,7 +63,7 @@ def inscrire(
     jeton = creer_jeton_verification(utilisateur.id_utilisateur)
     taches.add_task(envoyer_mail_verification, envoyeur,
                     utilisateur.adresse_mail, utilisateur.pseudo, jeton)
-    return utilisateur
+    return {"message": MESSAGE_INSCRIPTION}
 
 
 # déclaré avant /{id_utilisateur}, sinon "moi" serait capté comme un id
@@ -108,8 +130,13 @@ def mes_films_vus(
     return [ResultatRecherche.depuis_film(f) for f in films]
 
 
-@router.get("/{id_utilisateur}", response_model=UtilisateurPublic)
-def lire(id_utilisateur: int, db: Session = Depends(get_db)):
+@router.get("/{id_utilisateur}", response_model=UtilisateurProfil)
+def lire(
+    id_utilisateur: int,
+    _: Utilisateur = Depends(utilisateur_courant),  # profil réservé aux connectés
+    db: Session = Depends(get_db),
+):
+    """Profil public d'un utilisateur — sans adresse mail (voir UtilisateurProfil)."""
     utilisateur = db.get(Utilisateur, id_utilisateur)
     if utilisateur is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Utilisateur introuvable.")

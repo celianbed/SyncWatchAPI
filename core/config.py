@@ -4,6 +4,9 @@ from pathlib import Path
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Sentinelle : clé de signature non configurée (l'app refuse de démarrer avec, cf. main.py)
+SECRET_KEY_PAR_DEFAUT = "dev-uniquement-a-remplacer"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -22,8 +25,9 @@ class Settings(BaseSettings):
             return v.replace("postgres://", "postgresql://", 1)
         return v
 
-    # JWT — SECRET_KEY à définir dans .env, jamais committée
-    SECRET_KEY: str = "dev-uniquement-a-remplacer"
+    # JWT — SECRET_KEY à définir dans .env, jamais committée.
+    # Si elle reste à la valeur par défaut, l'application refuse de démarrer (voir main.py).
+    SECRET_KEY: str = SECRET_KEY_PAR_DEFAUT
     ALGORITHME_JWT: str = "HS256"
     
     DUREE_JETON_MINUTES: int = 60 * 24 * 7  # 7 jours : app mobile, pas de refresh token pour l'instant
@@ -33,6 +37,9 @@ class Settings(BaseSettings):
     TMDB_URL_BASE: str = "https://api.themoviedb.org/3"
     TMDB_LANGUE: str = "fr-FR"
     DUREE_CACHE_HEURES: int = 24  # fraîcheur du cache catalogue
+
+    # Limitation de débit (anti brute-force / email bombing) — False dans les tests
+    RATE_LIMIT_ACTIF: bool = True
 
     # Notifications — scan quotidien des diffusions
     NOTIFICATIONS_PLANIFIEES: bool = True  # False dans les tests

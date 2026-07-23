@@ -15,9 +15,13 @@ from api.dependances import client_tmdb, envoyeur_mail
 from core.config import settings
 
 settings.NOTIFICATIONS_PLANIFIEES = False  # pas de job APScheduler pendant les tests
+settings.RATE_LIMIT_ACTIF = False  # les tests enchaînent les appels : pas de 429
 
+from core.limitation import limiteur  # noqa: E402
 from db.database import Base, get_db  # noqa: E402
 from main import app  # noqa: E402
+
+limiteur.enabled = False  # ceinture + bretelles (quel que soit l'ordre d'import)
 from models import Utilisateur  # noqa: E402
 from tests.faux_tmdb import FauxClientTMDB  # noqa: E402
 
@@ -116,11 +120,15 @@ def inscrire(client, db):
     confirmation d'adresse mail.
     """
     def _inscrire(verifier=True, **surcharges):
-        reponse = client.post("/utilisateurs", json={**DONNEES_INSCRIPTION, **surcharges})
-        if verifier and reponse.status_code == 201:
-            utilisateur = db.get(Utilisateur, reponse.json()["id_utilisateur"])
-            utilisateur.est_verifie = True
-            db.commit()
+        donnees = {**DONNEES_INSCRIPTION, **surcharges}
+        reponse = client.post("/utilisateurs", json=donnees)
+        # la réponse ne porte plus l'id (anti-énumération) : on retrouve par l'adresse
+        if verifier and reponse.status_code == 202:
+            utilisateur = db.scalar(select(Utilisateur).where(
+                Utilisateur.adresse_mail == donnees["adresse_mail"]))
+            if utilisateur is not None:
+                utilisateur.est_verifie = True
+                db.commit()
         return reponse
     return _inscrire
 

@@ -119,11 +119,15 @@ def _envoyer_mail(envoyeur: Envoyeur, cle: str, destinataire: str,
     Ne propage pas les erreurs (tâche de fond : un backend mail KO ne doit pas remonter)."""
     contenu = contenus_emails()[cle]
     ctx = {"pseudo": pseudo, "lien": lien, "duree": str(duree)}
+    # contexte échappé pour tout ce qui finit dans du HTML : un pseudo contenant
+    # « <img onerror=…> » ne doit pas s'injecter dans le mail (le texte brut, lui,
+    # n'a pas besoin d'échappement).
+    ctx_html = {cle_ctx: html.escape(valeur) for cle_ctx, valeur in ctx.items()}
     corps_texte = substituer(contenu["texte"], **ctx)
     corps_html = _corps_html_bouton(
-        pseudo, contenu["titre"], substituer(contenu["intro"], **ctx),
+        pseudo, contenu["titre"], substituer(contenu["intro"], **ctx_html),
         contenu["bouton"], lien,
-        substituer(contenu["note"], **ctx), substituer(contenu["pied"], **ctx))
+        substituer(contenu["note"], **ctx_html), substituer(contenu["pied"], **ctx_html))
     try:
         envoyeur.envoyer(destinataire, contenu["sujet"], corps_texte, corps_html)
     except Exception:  # noqa: BLE001 — on journalise (niveau ERROR, visible) sans interrompre le flux
@@ -143,4 +147,13 @@ def envoyer_mail_reset(
 ) -> None:
     """Mail de réinitialisation de mot de passe (copie : section [reset] de emails.toml)."""
     _envoyer_mail(envoyeur, "reset", destinataire, pseudo,
+                  construire_lien_reset(jeton), settings.DUREE_JETON_RESET_MINUTES)
+
+
+def envoyer_mail_compte_existant(
+    envoyeur: Envoyeur, destinataire: str, pseudo: str, jeton: str
+) -> None:
+    """Inscription tentée sur une adresse déjà enregistrée : l'API reste muette
+    (anti-énumération), c'est ce mail qui prévient le vrai propriétaire."""
+    _envoyer_mail(envoyeur, "compte_existant", destinataire, pseudo,
                   construire_lien_reset(jeton), settings.DUREE_JETON_RESET_MINUTES)

@@ -1,5 +1,5 @@
 # tests/test_utilisateurs.py
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from core.securite import verifier_mot_de_passe
 from models import Utilisateur
@@ -7,13 +7,15 @@ from tests.conftest import DONNEES_INSCRIPTION
 from tests.faux_tmdb import REF_FILM, REF_SERIE
 
 
-def test_inscription_valide(inscrire):
+def test_inscription_valide(inscrire, db):
     reponse = inscrire()
-    assert reponse.status_code == 201
+    assert reponse.status_code == 202
+    # réponse volontairement générique : aucune donnée de compte n'en sort
     corps = reponse.json()
-    assert corps["pseudo"] == "celian"
-    assert corps["statut_compte"] == "actif"
-    assert "mot_de_passe" not in corps
+    assert "mot_de_passe" not in corps and "id_utilisateur" not in corps
+    # le compte est bien créé en base
+    assert db.scalar(select(Utilisateur).where(
+        Utilisateur.pseudo == "celian")) is not None
 
 
 def test_mot_de_passe_hache_en_base(inscrire, db):
@@ -23,11 +25,28 @@ def test_mot_de_passe_hache_en_base(inscrire, db):
     assert verifier_mot_de_passe(DONNEES_INSCRIPTION["mot_de_passe"], utilisateur.mot_de_passe)
 
 
-def test_mail_en_double(inscrire):
-    inscrire()
-    reponse = inscrire(pseudo="autre")
-    assert reponse.status_code == 409
-    assert "mail" in reponse.json()["detail"]
+def test_mail_en_double_ne_revele_rien(inscrire, db, envoyeur):
+    """Anti-énumération : réponse identique à une inscription normale."""
+    premiere = inscrire()
+    envoyeur.messages.clear()
+    seconde = inscrire(pseudo="autre")
+
+    # même code et même corps que la 1re : impossible de deviner que l'adresse existe
+    assert seconde.status_code == premiere.status_code == 202
+    assert seconde.json() == premiere.json()
+    # aucun compte en double n'a été créé
+    assert db.scalar(select(func.count()).select_from(Utilisateur).where(
+        Utilisateur.adresse_mail == DONNEES_INSCRIPTION["adresse_mail"])) == 1
+    # c'est le vrai propriétaire qui est prévenu par mail
+    assert len(envoyeur.messages) == 1
+    assert envoyeur.messages[0][0] == DONNEES_INSCRIPTION["adresse_mail"]
+    assert "déjà" in envoyeur.messages[0][2]
+
+
+def test_pseudo_caracteres_interdits(inscrire):
+    """Un pseudo ne doit pas pouvoir porter de balise (injection dans les mails/pages)."""
+    reponse = inscrire(pseudo="<img src=x onerror=a>")
+    assert reponse.status_code == 422
 
 
 def test_pseudo_en_double(inscrire):
@@ -50,15 +69,26 @@ def test_mot_de_passe_depasse_72_octets(inscrire):
     assert inscrire(mot_de_passe="é" * 40).status_code == 422
 
 
-def test_lecture_par_id(inscrire, client):
-    id_utilisateur = inscrire().json()["id_utilisateur"]
-    reponse = client.get(f"/utilisateurs/{id_utilisateur}")
+def test_lecture_par_id(client, jeton):
+    """Profil d'un autre utilisateur : accessible aux connectés, SANS adresse mail."""
+    id_utilisateur = client.get("/utilisateurs/moi",
+                                headers=_entete(jeton)).json()["id_utilisateur"]
+    reponse = client.get(f"/utilisateurs/{id_utilisateur}", headers=_entete(jeton))
     assert reponse.status_code == 200
-    assert reponse.json()["pseudo"] == "celian"
+    corps = reponse.json()
+    assert corps["pseudo"] == "celian"
+    # fuite de données : l'adresse mail ne doit jamais sortir sur ce profil
+    assert "adresse_mail" not in corps
 
 
-def test_lecture_id_inconnu(client):
-    assert client.get("/utilisateurs/999999").status_code == 404
+def test_lecture_par_id_sans_jeton(client):
+    """Endpoint fermé aux anonymes : empêche l'aspiration des profils."""
+    assert client.get("/utilisateurs/1").status_code == 401
+
+
+def test_lecture_id_inconnu(client, jeton):
+    assert client.get("/utilisateurs/999999",
+                      headers=_entete(jeton)).status_code == 404
 
 
 def _entete(jeton):
