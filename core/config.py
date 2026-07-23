@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     # Connexion Google : ID du client OAuth « Web » (audience du id_token à vérifier).
     GOOGLE_CLIENT_ID: str = ""
 
+    # Suivi d'erreurs Sentry (vide = désactivé). DSN à définir en prod.
+    SENTRY_DSN: str = ""
+    SENTRY_ENV: str = "production"
+
     # Secret exigé par /taches/* (déclenchement par un cron externe en prod)
     CRON_SECRET: str = ""
 

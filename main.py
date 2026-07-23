@@ -11,6 +11,12 @@ from api import (accueil, auth, avis, calendrier, films, notifications,
                      recherche, series, stats, taches, utilisateurs, visionnage)
 from core.config import SECRET_KEY_PAR_DEFAUT, settings
 from core.limitation import brancher_limitation
+
+# Suivi d'erreurs : à initialiser AVANT la création de l'app (sinon inactif).
+if settings.SENTRY_DSN:
+    import sentry_sdk
+    sentry_sdk.init(dsn=settings.SENTRY_DSN, environment=settings.SENTRY_ENV,
+                    traces_sample_rate=0.1, send_default_pii=False)
 from db.database import get_db
 from services import notification_service
 from services.tmdb_client import ClientTMDB

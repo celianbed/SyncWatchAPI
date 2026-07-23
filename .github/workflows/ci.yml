@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    # Postgres jetable pour les tests (le conftest crée sa base sync_watch_test dessus)
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sync_watch
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/sync_watch
+      SECRET_KEY: cle-de-test-ci-non-secrete
+      RATE_LIMIT_ACTIF: "false"
+      NOTIFICATIONS_PLANIFIEES: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+
+      - name: Tests
+        run: python -m pytest -q
+
+  # Déploiement Render — ne part QUE si les tests ci-dessus passent, et
+  # uniquement sur un push vers main (jamais sur une Pull Request).
+  # Prérequis côté Render : couper l'Auto-Deploy et copier le « Deploy Hook »,
+  # puis l'ajouter en secret GitHub RENDER_DEPLOY_HOOK.
+  deploy:
+    needs: tests
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Déclencher le déploiement Render
+        run: curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
