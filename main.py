@@ -24,6 +24,7 @@ from services.tmdb_client import ClientTMDB
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+
     # Refus de démarrer avec la clé de signature par défaut : elle est publique
     # (dans le dépôt), donc n'importe qui pourrait forger un jeton d'accès.
     if settings.SECRET_KEY == SECRET_KEY_PAR_DEFAUT:
@@ -84,14 +85,6 @@ def health(db: Session = Depends(get_db)):
     """Vérifie que l'API répond et que la base de données est joignable."""
     db.execute(text("SELECT 1"))
     return {"statut": "ok", "base_de_donnees": "accessible"}
-
-
-# TEMPORAIRE — vérifie que Sentry capte bien les erreurs en prod.
-# À SUPPRIMER une fois l'événement vu dans le dashboard Sentry.
-@app.get("/sentry-debug", tags=["sante"])
-async def trigger_error():
-    division_by_zero = 1 / 0  # noqa: F841 — plantage volontaire pour tester Sentry
-    return {"jamais_atteint": division_by_zero}
 
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
