@@ -86,6 +86,14 @@ def health(db: Session = Depends(get_db)):
     return {"statut": "ok", "base_de_donnees": "accessible"}
 
 
+# TEMPORAIRE — vérifie que Sentry capte bien les erreurs en prod.
+# À SUPPRIMER une fois l'événement vu dans le dashboard Sentry.
+@app.get("/sentry-debug", tags=["sante"])
+async def trigger_error():
+    division_by_zero = 1 / 0  # noqa: F841 — plantage volontaire pour tester Sentry
+    return {"jamais_atteint": division_by_zero}
+
+
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(utilisateurs.router, prefix="/utilisateurs", tags=["utilisateurs"])
 app.include_router(recherche.router, prefix="/search", tags=["recherche"])
