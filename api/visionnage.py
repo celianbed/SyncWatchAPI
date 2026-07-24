@@ -1,9 +1,10 @@
 # api/visionnage.py — marquage vu/non-vu des épisodes et saisons
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import func, literal, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from api.communs import get_ou_404
 from api.dependances import utilisateur_courant
 from db.database import get_db
 from models import Episode, Saison, Utilisateur, VisionnerEpisode
@@ -20,8 +21,7 @@ def marquer_episode_vu(
     db: Session = Depends(get_db),
 ):
     """Marque un épisode vu ; re-marquer compte un revisionnage."""
-    if db.get(Episode, id_episode) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Épisode introuvable.")
+    get_ou_404(db, Episode, id_episode, "Épisode introuvable.")
 
     requete = insert(VisionnerEpisode).values(
         id_utilisateur=utilisateur.id_utilisateur, id_episode=id_episode)
@@ -40,10 +40,9 @@ def retirer_episode_vu(
     utilisateur: Utilisateur = Depends(utilisateur_courant),
     db: Session = Depends(get_db),
 ):
-    vu = db.get(VisionnerEpisode, {"id_utilisateur": utilisateur.id_utilisateur,
-                                   "id_episode": id_episode})
-    if vu is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Épisode non marqué comme vu.")
+    vu = get_ou_404(db, VisionnerEpisode,
+                    {"id_utilisateur": utilisateur.id_utilisateur, "id_episode": id_episode},
+                    "Épisode non marqué comme vu.")
     db.delete(vu)
     db.commit()
 
@@ -55,8 +54,7 @@ def marquer_saison_vue(
     db: Session = Depends(get_db),
 ):
     """Marque vus tous les épisodes déjà diffusés de la saison (les vus restent vus)."""
-    if db.get(Saison, id_saison) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Saison introuvable.")
+    get_ou_404(db, Saison, id_saison, "Saison introuvable.")
 
     diffusees = (select(literal(utilisateur.id_utilisateur), Episode.id_episode)
                  .where(Episode.id_saison == id_saison,

@@ -1,9 +1,10 @@
 # api/notifications.py — appareils (jetons FCM) et notifications
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from api.communs import du_proprietaire_ou_404
 from api.dependances import utilisateur_courant
 from db.database import get_db
 from models import (Appareil, Episode, Film, Notification, Saison, Serie,
@@ -70,9 +71,8 @@ def supprimer_appareil(
     db: Session = Depends(get_db),
 ):
     """À appeler à la déconnexion pour ne plus recevoir de push sur cet appareil."""
-    appareil = db.get(Appareil, id_appareil)
-    if appareil is None or appareil.id_utilisateur != utilisateur.id_utilisateur:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Appareil introuvable.")
+    appareil = du_proprietaire_ou_404(db, Appareil, id_appareil, utilisateur,
+                                      "Appareil introuvable.")
     db.delete(appareil)
     db.commit()
 
@@ -97,10 +97,8 @@ def marquer_lue(
     utilisateur: Utilisateur = Depends(utilisateur_courant),
     db: Session = Depends(get_db),
 ):
-    notification = db.get(Notification, id_notification)
-    # 404 aussi pour la notification d'un autre : ne pas révéler son existence
-    if notification is None or notification.id_utilisateur != utilisateur.id_utilisateur:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Notification introuvable.")
+    notification = du_proprietaire_ou_404(db, Notification, id_notification, utilisateur,
+                                          "Notification introuvable.")
     notification.lue = True
     db.commit()
     db.refresh(notification)

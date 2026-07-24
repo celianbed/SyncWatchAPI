@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     
     DUREE_JETON_MINUTES: int = 60 * 24 * 7  # 7 jours : app mobile, pas de refresh token pour l'instant
 
+    # Documentation interactive : pratique en dev, à couper en prod (DOCS_ACTIVES=false
+    # sur Render) pour ne pas exposer publiquement le schéma complet de l'API.
+    DOCS_ACTIVES: bool = True
+
     # TMDB — jeton d'accès en lecture (v4) à définir dans .env
     TMDB_API_TOKEN: str = ""
     TMDB_URL_BASE: str = "https://api.themoviedb.org/3"

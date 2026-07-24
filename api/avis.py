@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api.communs import du_proprietaire_ou_404, get_ou_404
 from api.dependances import utilisateur_courant
 from db.database import get_db
 from models import Avis, Episode, Film, Serie, Utilisateur
@@ -20,14 +21,6 @@ def _verifier_cible(db: Session, donnees: AvisCreation) -> None:
     )
     if db.get(*cible) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Cible de l'avis introuvable.")
-
-
-def _avis_du_proprietaire(db: Session, id_avis: int, utilisateur: Utilisateur) -> Avis:
-    avis = db.get(Avis, id_avis)
-    # 404 aussi pour l'avis d'un autre : ne pas révéler son existence
-    if avis is None or avis.id_utilisateur != utilisateur.id_utilisateur:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Avis introuvable.")
-    return avis
 
 
 @router.post("", response_model=AvisPublic, status_code=status.HTTP_201_CREATED)
@@ -74,10 +67,7 @@ def mes_avis(
 
 @router.get("/{id_avis}", response_model=AvisPublic)
 def lire_avis(id_avis: int, db: Session = Depends(get_db)):
-    avis = db.get(Avis, id_avis)
-    if avis is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Avis introuvable.")
-    return avis
+    return get_ou_404(db, Avis, id_avis, "Avis introuvable.")
 
 
 @router.patch("/{id_avis}", response_model=AvisPublic)
@@ -87,7 +77,7 @@ def modifier_avis(
     utilisateur: Utilisateur = Depends(utilisateur_courant),
     db: Session = Depends(get_db),
 ):
-    avis = _avis_du_proprietaire(db, id_avis, utilisateur)
+    avis = du_proprietaire_ou_404(db, Avis, id_avis, utilisateur, "Avis introuvable.")
     for champ in donnees.model_fields_set:  # null explicite = effacer le champ
         setattr(avis, champ, getattr(donnees, champ))
     if avis.note is None and not (avis.commentaire or "").strip():
@@ -105,6 +95,6 @@ def supprimer_avis(
     utilisateur: Utilisateur = Depends(utilisateur_courant),
     db: Session = Depends(get_db),
 ):
-    avis = _avis_du_proprietaire(db, id_avis, utilisateur)
+    avis = du_proprietaire_ou_404(db, Avis, id_avis, utilisateur, "Avis introuvable.")
     db.delete(avis)
     db.commit()

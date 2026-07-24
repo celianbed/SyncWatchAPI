@@ -53,6 +53,10 @@ app = FastAPI(
     description="Suivi de séries et de films : historique de visionnage, avis, notifications de sortie.",
     version="0.1.0",
     lifespan=lifespan,
+    # En prod (DOCS_ACTIVES=false) : pas de /docs, /redoc ni /openapi.json exposés.
+    docs_url="/docs" if settings.DOCS_ACTIVES else None,
+    redoc_url="/redoc" if settings.DOCS_ACTIVES else None,
+    openapi_url="/openapi.json" if settings.DOCS_ACTIVES else None,
 )
 
 # En dev : tout autoriser. À restreindre aux domaines du front en production.
@@ -69,7 +73,10 @@ brancher_limitation(app)
 
 @app.get("/", tags=["sante"])
 def racine():
-    return {"application": "SyncWatch", "documentation": "/docs"}
+    reponse = {"application": "SyncWatch"}
+    if settings.DOCS_ACTIVES:
+        reponse["documentation"] = "/docs"
+    return reponse
 
 
 @app.get("/health", tags=["sante"])

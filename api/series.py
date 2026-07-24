@@ -1,8 +1,8 @@
 # api/series.py
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api.communs import recommandations, serie_ou_404, serie_par_reference
 from api.dependances import client_tmdb, utilisateur_courant
 from db.database import get_db
 from models import Serie, SuivreSerie, Utilisateur
@@ -18,7 +18,7 @@ router = APIRouter()
 
 
 def _suivi_ou_404(db: Session, utilisateur: Utilisateur, reference_tmdb: int) -> SuivreSerie:
-    serie = db.scalar(select(Serie).where(Serie.reference_tmdb == reference_tmdb))
+    serie = serie_par_reference(db, reference_tmdb)
     suivi = serie and db.get(SuivreSerie, {"id_utilisateur": utilisateur.id_utilisateur,
                                            "id_serie": serie.id_serie})
     if not suivi:
@@ -108,10 +108,7 @@ def ne_plus_suivre(
 @router.get("/{reference_tmdb}/saisons", response_model=list[SaisonAvecEpisodes])
 def saisons_serie(reference_tmdb: int, db: Session = Depends(get_db)):
     """Saisons et épisodes du cache (remplis dès qu'un utilisateur suit la série)."""
-    serie = db.scalar(select(Serie).where(Serie.reference_tmdb == reference_tmdb))
-    if serie is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Série absente du cache.")
-    return serie.saisons
+    return serie_ou_404(db, reference_tmdb).saisons
 
 
 @router.get("/{reference_tmdb}/prochain-episode", response_model=ProchainEpisode | None)
@@ -121,9 +118,7 @@ def prochain_episode(
     db: Session = Depends(get_db),
 ):
     """Premier épisode non vu (saisons spéciales exclues) ; null si tout est vu."""
-    serie = db.scalar(select(Serie).where(Serie.reference_tmdb == reference_tmdb))
-    if serie is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Série absente du cache.")
+    serie = serie_ou_404(db, reference_tmdb)
     ligne = visionnage_service.prochain_episode(db, utilisateur.id_utilisateur, serie.id_serie)
     if ligne is None:
         return None
@@ -136,9 +131,7 @@ async def series_similaires(
     reference_tmdb: int, tmdb: ClientTMDB = Depends(client_tmdb)
 ):
     """Recommandations TMDB pour cette série — rangée « Titres similaires »."""
-    donnees = await tmdb.similaires("tv", reference_tmdb)
-    return [ResultatRecherche.depuis_tmdb(brut, "serie")
-            for brut in (donnees or {}).get("results", [])]
+    return await recommandations(tmdb, "tv", "serie", reference_tmdb)
 
 
 @router.get("/{reference_tmdb}/plateformes", response_model=PlateformesVisionnage)

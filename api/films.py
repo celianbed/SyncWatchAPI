@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from api.communs import film_par_reference, recommandations
 from api.dependances import client_tmdb, utilisateur_courant
 from db.database import get_db
 from models import Film, SuivreFilm, Utilisateur, VisionnerFilm
@@ -15,6 +16,13 @@ from services import catalogue_service
 from services.tmdb_client import ClientTMDB
 
 router = APIRouter()
+
+
+def _nombre_visionnages(db: Session, id_utilisateur: int, id_film: int) -> int:
+    """Combien de fois l'utilisateur a vu ce film (0 si jamais)."""
+    return db.scalar(select(func.count()).select_from(VisionnerFilm).where(
+        VisionnerFilm.id_utilisateur == id_utilisateur,
+        VisionnerFilm.id_film == id_film))
 
 
 @router.get("/{reference_tmdb}", response_model=FilmPublic)
@@ -64,7 +72,7 @@ def ne_plus_suivre_film(
     utilisateur: Utilisateur = Depends(utilisateur_courant),
     db: Session = Depends(get_db),
 ):
-    film = db.scalar(select(Film).where(Film.reference_tmdb == reference_tmdb))
+    film = film_par_reference(db, reference_tmdb)
     suivi = film and db.get(SuivreFilm, {"id_utilisateur": utilisateur.id_utilisateur,
                                          "id_film": film.id_film})
     if not suivi:
@@ -100,9 +108,7 @@ async def marquer_film_vu(
         suivi.statut = "vu"
     db.commit()
 
-    nombre = db.scalar(select(func.count()).select_from(VisionnerFilm).where(
-        VisionnerFilm.id_utilisateur == utilisateur.id_utilisateur,
-        VisionnerFilm.id_film == film.id_film))
+    nombre = _nombre_visionnages(db, utilisateur.id_utilisateur, film.id_film)
     return FilmVu(id_film=film.id_film, date_visionnage=visionnage.date_visionnage,
                   nombre_visionnages=nombre)
 
@@ -114,12 +120,10 @@ def etat_visionnage_film(
     db: Session = Depends(get_db),
 ):
     """Le film a-t-il déjà été vu par l'utilisateur courant ? (bouton « Vu » de la fiche)"""
-    film = db.scalar(select(Film).where(Film.reference_tmdb == reference_tmdb))
+    film = film_par_reference(db, reference_tmdb)
     if film is None:  # pas encore en cache = jamais vu
         return EtatVisionnageFilm(deja_vu=False, nombre_visionnages=0)
-    nombre = db.scalar(select(func.count()).select_from(VisionnerFilm).where(
-        VisionnerFilm.id_utilisateur == utilisateur.id_utilisateur,
-        VisionnerFilm.id_film == film.id_film))
+    nombre = _nombre_visionnages(db, utilisateur.id_utilisateur, film.id_film)
     return EtatVisionnageFilm(deja_vu=nombre > 0, nombre_visionnages=nombre)
 
 
@@ -128,9 +132,7 @@ async def films_similaires(
     reference_tmdb: int, tmdb: ClientTMDB = Depends(client_tmdb)
 ):
     """Recommandations TMDB pour ce film — rangée « Titres similaires »."""
-    donnees = await tmdb.similaires("movie", reference_tmdb)
-    return [ResultatRecherche.depuis_tmdb(brut, "film")
-            for brut in (donnees or {}).get("results", [])]
+    return await recommandations(tmdb, "movie", "film", reference_tmdb)
 
 
 @router.get("/{reference_tmdb}/plateformes", response_model=PlateformesVisionnage)
