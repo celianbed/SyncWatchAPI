@@ -17,7 +17,13 @@ from db.database import Base  # noqa: E402
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Migrations sur la connexion DIRECTE (non-poolée) si fournie — le pooler Neon
+# (PgBouncer, mode transaction) est déconseillé pour le DDL. Sinon on retombe sur
+# DATABASE_URL (local/CI, sans pooler). Même normalisation postgres:// → postgresql://.
+url_migrations = settings.DATABASE_URL_DIRECT or settings.DATABASE_URL
+if url_migrations.startswith("postgres://"):
+    url_migrations = url_migrations.replace("postgres://", "postgresql://", 1)
+config.set_main_option("sqlalchemy.url", url_migrations)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

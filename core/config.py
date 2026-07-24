@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     )
 
     DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/syncwatch"
+    # Connexion directe (non-poolée) réservée aux migrations Alembic.
+    # Vide = réutiliser DATABASE_URL (cas local/CI, où il n'y a pas de pooler).
+    DATABASE_URL_DIRECT: str = ""
 
     @field_validator("DATABASE_URL")
     @classmethod

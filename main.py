@@ -72,7 +72,7 @@ app.add_middleware(
 brancher_limitation(app)
 
 
-@app.get("/", tags=["sante"])
+@app.api_route("/", methods=["GET", "HEAD"], tags=["sante"])
 def racine():
     reponse = {"application": "SyncWatch"}
     if settings.DOCS_ACTIVES:
