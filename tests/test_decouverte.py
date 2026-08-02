@@ -30,10 +30,21 @@ def test_feed_extraits_exige_authentification(client):
     assert client.get("/decouverte/extraits").status_code == 401
 
 
-def test_selection_ignore_les_videos_non_youtube():
+def test_candidats_classent_et_ignorent_non_youtube():
     videos = [
         {"site": "Vimeo", "key": "v1", "type": "Trailer", "official": True},
         {"site": "YouTube", "key": "y1", "type": "Clip", "official": False},
+        {"site": "YouTube", "key": "y2", "type": "Trailer", "official": True},
     ]
-    assert decouverte_service._meilleure_cle_youtube(videos) == "y1"
-    assert decouverte_service._meilleure_cle_youtube([]) is None
+    # Trailer officiel (y2) avant Clip (y1) ; Vimeo exclu
+    assert decouverte_service._candidats_youtube(videos) == ["y2", "y1"]
+    assert decouverte_service._candidats_youtube([]) == []
+
+
+def test_parser_integrables_ne_garde_que_public_et_embeddable():
+    items = [
+        {"id": "a", "status": {"embeddable": True, "privacyStatus": "public"}},
+        {"id": "b", "status": {"embeddable": False, "privacyStatus": "public"}},
+        {"id": "c", "status": {"embeddable": True, "privacyStatus": "unlisted"}},
+    ]
+    assert decouverte_service._parser_integrables(items) == {"a"}

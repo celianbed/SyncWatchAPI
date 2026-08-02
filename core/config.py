@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     TMDB_LANGUE: str = "fr-FR"
     DUREE_CACHE_HEURES: int = 24  # fraîcheur du cache catalogue
 
+    # YouTube Data API v3 (optionnel) — filtre les bandes-annonces non intégrables
+    # du feed « extraits ». Vide = pas de filtrage (le repli côté app couvre alors).
+    YOUTUBE_API_KEY: str = ""
+
     # Limitation de débit (anti brute-force / email bombing) — False dans les tests
     RATE_LIMIT_ACTIF: bool = True
 
