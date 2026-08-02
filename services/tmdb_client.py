@@ -73,6 +73,17 @@ class ClientTMDB:
         """Recommandations TMDB pour un titre (media = "tv" ou "movie")."""
         return await self._get(f"/{media}/{tmdb_id}/recommendations")
 
+    async def videos(self, media: str, tmdb_id: int) -> list[dict]:
+        """Bandes-annonces / extraits d'un titre (media = "tv" ou "movie").
+
+        include_video_language=fr,en : on veut les trailers FR **et** EN — les VF
+        manquent souvent, et le filtre de langue global (fr-FR) les masquerait.
+        Renvoie la liste brute `results` (vide si aucune vidéo).
+        """
+        donnees = await self._get(f"/{media}/{tmdb_id}/videos",
+                                  include_video_language="fr,en")
+        return (donnees or {}).get("results", [])
+
     async def get_serie(self, tmdb_id: int, append: str | None = None) -> dict | None:
         """Fiche série ; `append` = append_to_response pour limiter les allers-retours."""
         params = {"append_to_response": append} if append else {}

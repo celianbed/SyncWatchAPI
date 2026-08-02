@@ -120,6 +120,18 @@ SIMILAIRES_FILM = {
     ]
 }
 
+# /{media}/{id}/videos : bandes-annonces (on privilégie Trailer officiel FR)
+VIDEOS = {
+    "results": [
+        {"site": "Vimeo", "key": "ignore", "type": "Trailer", "official": True,
+         "iso_639_1": "fr", "name": "Sur Vimeo — ignoré"},
+        {"site": "YouTube", "key": "cle_fr", "type": "Trailer", "official": True,
+         "iso_639_1": "fr", "name": "Bande-annonce VF"},
+        {"site": "YouTube", "key": "cle_en", "type": "Teaser", "official": True,
+         "iso_639_1": "en", "name": "Teaser"},
+    ]
+}
+
 
 class FauxClientTMDB:
     """Même interface que ClientTMDB, réponses figées, compteur d'appels."""
@@ -151,6 +163,10 @@ class FauxClientTMDB:
     async def similaires(self, media, tmdb_id):
         self.compteurs["similaires"] += 1
         return copy.deepcopy(SIMILAIRES_TV if media == "tv" else SIMILAIRES_FILM)
+
+    async def videos(self, media, tmdb_id):
+        self.compteurs["videos"] += 1
+        return copy.deepcopy(VIDEOS["results"])
 
     async def get_serie(self, tmdb_id, append=None):
         self.compteurs["get_serie"] += 1
