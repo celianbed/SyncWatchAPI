@@ -35,6 +35,7 @@ class AuteurAvis(BaseModel):
 
     id_utilisateur: int
     pseudo: str
+    avatar: str | None = None
 
 
 class AvisPublic(BaseModel):

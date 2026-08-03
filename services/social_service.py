@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from models import (Abonnement, Avis, Episode, Film, Saison, Serie,
-                       SuivreFilm, SuivreSerie, Utilisateur)
+                       SuivreFilm, SuivreSerie, Utilisateur, VisionnerFilm)
 
 
 def _comptes_par_user(db: Session, colonne_user, ids: list[int]) -> dict[int, int]:
@@ -90,6 +90,67 @@ def avis_profil(db: Session, id_utilisateur: int, limite: int = 10) -> list[dict
             "reference_tmdb": ref, "note": a.note, "date_creation": a.date_creation,
         })
     return resultats
+
+
+def fil_activite(db: Session, uid: int, limite: int = 40) -> list[dict]:
+    """Fil d'activité des personnes suivies : avis, films vus, séries suivies.
+
+    Trois sources fusionnées et triées par date décroissante (les avis d'épisode
+    sont ignorés dans le fil pour rester lisible).
+    """
+    suivis = (select(Abonnement.id_suivi)
+              .where(Abonnement.id_suiveur == uid).scalar_subquery())
+
+    def _acteur(aid, pseudo, avatar):
+        return {"id_utilisateur": aid, "pseudo": pseudo, "avatar": avatar}
+
+    evenements: list[dict] = []
+
+    # Films vus
+    for date_v, titre, ref, aid, pseudo, avatar in db.execute(
+            select(VisionnerFilm.date_visionnage, Film.titre, Film.reference_tmdb,
+                   Utilisateur.id_utilisateur, Utilisateur.pseudo, Utilisateur.avatar)
+            .join(Film, VisionnerFilm.id_film == Film.id_film)
+            .join(Utilisateur, VisionnerFilm.id_utilisateur == Utilisateur.id_utilisateur)
+            .where(VisionnerFilm.id_utilisateur.in_(suivis))
+            .order_by(VisionnerFilm.date_visionnage.desc()).limit(limite)).all():
+        evenements.append({
+            "type": "film_vu", "date": date_v, "titre": titre, "type_cible": "film",
+            "reference_tmdb": ref, "note": None, "acteur": _acteur(aid, pseudo, avatar)})
+
+    # Séries suivies
+    for date_a, titre, ref, aid, pseudo, avatar in db.execute(
+            select(SuivreSerie.date_ajout, Serie.titre, Serie.reference_tmdb,
+                   Utilisateur.id_utilisateur, Utilisateur.pseudo, Utilisateur.avatar)
+            .join(Serie, SuivreSerie.id_serie == Serie.id_serie)
+            .join(Utilisateur, SuivreSerie.id_utilisateur == Utilisateur.id_utilisateur)
+            .where(SuivreSerie.id_utilisateur.in_(suivis))
+            .order_by(SuivreSerie.date_ajout.desc()).limit(limite)).all():
+        evenements.append({
+            "type": "serie_suivie", "date": date_a, "titre": titre, "type_cible": "serie",
+            "reference_tmdb": ref, "note": None, "acteur": _acteur(aid, pseudo, avatar)})
+
+    # Avis (série ou film — via outerjoin ; les avis d'épisode sont exclus)
+    for date_c, note, titre_s, ref_s, titre_f, ref_f, aid, pseudo, avatar in db.execute(
+            select(Avis.date_creation, Avis.note, Serie.titre, Serie.reference_tmdb,
+                   Film.titre, Film.reference_tmdb,
+                   Utilisateur.id_utilisateur, Utilisateur.pseudo, Utilisateur.avatar)
+            .join(Utilisateur, Avis.id_utilisateur == Utilisateur.id_utilisateur)
+            .outerjoin(Serie, Avis.id_serie == Serie.id_serie)
+            .outerjoin(Film, Avis.id_film == Film.id_film)
+            .where(Avis.id_utilisateur.in_(suivis), Avis.id_episode.is_(None))
+            .order_by(Avis.date_creation.desc()).limit(limite)).all():
+        titre = titre_s or titre_f
+        if titre is None:
+            continue
+        evenements.append({
+            "type": "avis", "date": date_c, "titre": titre,
+            "type_cible": "serie" if titre_s else "film",
+            "reference_tmdb": ref_s if titre_s else ref_f, "note": note,
+            "acteur": _acteur(aid, pseudo, avatar)})
+
+    evenements.sort(key=lambda e: e["date"], reverse=True)
+    return evenements[:limite]
 
 
 def profil_detaille(db: Session, uid_courant: int, cible: Utilisateur) -> dict:

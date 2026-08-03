@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from api.communs import du_proprietaire_ou_404, get_ou_404
 from api.dependances import utilisateur_courant
 from db.database import get_db
-from models import Avis, Episode, Film, Serie, Utilisateur
+from models import Abonnement, Avis, Episode, Film, Serie, Utilisateur
 from schemas.avis import AvisCreation, AvisMaj, AvisPublic
 
 router = APIRouter()
@@ -45,14 +45,38 @@ def lister_avis(
     db: Session = Depends(get_db),
 ):
     """Les avis d'une cible — exactement un filtre parmi les trois."""
-    filtres = {"id_serie": id_serie, "id_film": id_film, "id_episode": id_episode}
-    actifs = {nom: valeur for nom, valeur in filtres.items() if valeur is not None}
+    nom, valeur = _cible_unique(id_serie, id_film, id_episode)
+    return db.scalars(select(Avis).where(getattr(Avis, nom) == valeur)
+                      .order_by(Avis.date_creation.desc())).all()
+
+
+def _cible_unique(id_serie, id_film, id_episode) -> tuple[str, int]:
+    """Valide qu'exactement un filtre de cible est fourni, et le renvoie."""
+    actifs = {n: v for n, v in {"id_serie": id_serie, "id_film": id_film,
+                                "id_episode": id_episode}.items() if v is not None}
     if len(actifs) != 1:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
                             "Un filtre exactement : id_serie, id_film ou id_episode.")
-    nom, valeur = next(iter(actifs.items()))
-    return db.scalars(select(Avis).where(getattr(Avis, nom) == valeur)
-                      .order_by(Avis.date_creation.desc())).all()
+    return next(iter(actifs.items()))
+
+
+# déclaré avant /{id_avis}, sinon "abonnements" serait capté comme un id
+@router.get("/abonnements", response_model=list[AvisPublic])
+def avis_de_mes_abonnements(
+    id_serie: int | None = None,
+    id_film: int | None = None,
+    id_episode: int | None = None,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Avis d'une cible, limités aux personnes que l'utilisateur courant suit."""
+    nom, valeur = _cible_unique(id_serie, id_film, id_episode)
+    suivis = select(Abonnement.id_suivi).where(
+        Abonnement.id_suiveur == utilisateur.id_utilisateur)
+    return db.scalars(
+        select(Avis).where(getattr(Avis, nom) == valeur,
+                           Avis.id_utilisateur.in_(suivis))
+        .order_by(Avis.date_creation.desc())).all()
 
 
 # déclaré avant /{id_avis}, sinon "moi" serait capté comme un id

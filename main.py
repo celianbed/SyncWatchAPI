@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from api import (accueil, auth, avis, calendrier, decouverte, films,
+from api import (accueil, activite, auth, avis, calendrier, decouverte, films,
                      notifications, recherche, series, stats, taches,
                      utilisateurs, visionnage)
 from core.config import SECRET_KEY_PAR_DEFAUT, settings
@@ -92,6 +92,7 @@ app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(utilisateurs.router, prefix="/utilisateurs", tags=["utilisateurs"])
 app.include_router(recherche.router, prefix="/search", tags=["recherche"])
 app.include_router(decouverte.router, prefix="/decouverte", tags=["decouverte"])
+app.include_router(activite.router, prefix="/activite", tags=["activite"])
 app.include_router(series.router, prefix="/series", tags=["series"])
 app.include_router(films.router, prefix="/films", tags=["films"])
 app.include_router(visionnage.router, tags=["visionnage"])

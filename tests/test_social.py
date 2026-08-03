@@ -2,7 +2,7 @@
 from sqlalchemy import select
 
 from models import Utilisateur
-from tests.faux_tmdb import REF_SERIE
+from tests.faux_tmdb import REF_FILM, REF_SERIE
 
 
 def _h(jeton):
@@ -102,6 +102,52 @@ def test_avis_profil_titre_et_note(client, db, jeton):
 def test_avis_profil_vide(client, db, jeton, inscrire):
     inscrire(pseudo="bob", adresse_mail="bob@example.com")
     assert client.get(f"/utilisateurs/{_id(db, 'bob')}/avis", headers=_h(jeton)).json() == []
+
+
+def test_avis_de_mes_abonnements(client, db, jeton, inscrire):
+    inscrire(pseudo="bob", adresse_mail="bob@example.com")
+    inscrire(pseudo="carol", adresse_mail="carol@example.com")
+    id_bob = _id(db, "bob")
+    client.post(f"/utilisateurs/{id_bob}/abonner", headers=_h(jeton))  # celian suit bob
+
+    jeton_bob, jeton_carol = _jeton_de(client, "bob"), _jeton_de(client, "carol")
+    id_serie = client.post(f"/series/{REF_SERIE}/suivre",
+                           headers=_h(jeton_bob)).json()["id_serie"]
+    client.post("/avis", headers=_h(jeton_bob),
+                json={"id_serie": id_serie, "note": 9, "commentaire": "Top"})
+    client.post(f"/series/{REF_SERIE}/suivre", headers=_h(jeton_carol))
+    client.post("/avis", headers=_h(jeton_carol), json={"id_serie": id_serie, "note": 3})
+
+    # celian voit l'avis de bob (suivi), pas celui de carol (non suivie)
+    avis = client.get("/avis/abonnements", params={"id_serie": id_serie},
+                      headers=_h(jeton)).json()
+    assert len(avis) == 1
+    assert avis[0]["utilisateur"]["pseudo"] == "bob"
+    assert "avatar" in avis[0]["utilisateur"]
+    assert avis[0]["note"] == 9
+    assert avis[0]["commentaire"] == "Top"
+
+
+def test_fil_activite(client, db, jeton, inscrire):
+    inscrire(pseudo="bob", adresse_mail="bob@example.com")
+    inscrire(pseudo="carol", adresse_mail="carol@example.com")
+    id_bob = _id(db, "bob")
+    client.post(f"/utilisateurs/{id_bob}/abonner", headers=_h(jeton))  # celian suit bob
+
+    jeton_bob = _jeton_de(client, "bob")
+    id_serie = client.post(f"/series/{REF_SERIE}/suivre",
+                           headers=_h(jeton_bob)).json()["id_serie"]
+    client.post(f"/films/{REF_FILM}/vu", headers=_h(jeton_bob))
+    client.post("/avis", headers=_h(jeton_bob), json={"id_serie": id_serie, "note": 8})
+
+    # carol (non suivie) agit aussi → doit être exclue du fil de celian
+    client.post(f"/films/{REF_FILM}/vu", headers=_h(_jeton_de(client, "carol")))
+
+    fil = client.get("/activite", headers=_h(jeton)).json()
+    assert {e["type"] for e in fil} == {"serie_suivie", "film_vu", "avis"}
+    assert all(e["acteur"]["pseudo"] == "bob" for e in fil)  # carol exclue
+    dates = [e["date"] for e in fil]
+    assert dates == sorted(dates, reverse=True)  # trié par date décroissante
 
 
 def test_social_exige_authentification(client, db, jeton, inscrire):
