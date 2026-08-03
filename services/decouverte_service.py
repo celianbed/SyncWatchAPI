@@ -9,20 +9,18 @@ import httpx
 from core.config import settings
 from services.tmdb_client import ClientTMDB
 
-# Cache mémoire : les tendances bougent lentement, et surtout on évite de
-# rappeler TMDB (1 appel trending + 1 appel vidéos par titre) à chaque ouverture.
+# Cache mémoire par page : les tendances bougent lentement, et surtout on évite
+# de rappeler TMDB (1 appel trending + 1 appel vidéos par titre) à chaque page.
 _DUREE_CACHE_S = 3 * 3600
-_NB_MAX = 15  # nombre de titres gardés dans le feed
 
 _URL_YOUTUBE_API = "https://www.googleapis.com/youtube/v3/videos"
 
-_cache: dict = {"expire": 0.0, "items": []}
+_cache: dict[int, dict] = {}  # page -> {"expire": float, "items": list}
 
 
 def vider_cache() -> None:
     """Réinitialise le cache (utilisé par les tests)."""
-    _cache["expire"] = 0.0
-    _cache["items"] = []
+    _cache.clear()
 
 
 def _annee(date_str: str | None) -> int | None:
@@ -126,12 +124,16 @@ async def _cles_integrables(cles: list[str]) -> set[str]:
     return integrables
 
 
-async def feed_extraits(tmdb: ClientTMDB) -> list[dict]:
-    """Feed de bandes-annonces intégrables des titres en tendance (avec cache)."""
-    if _cache["items"] and time.monotonic() < _cache["expire"]:
-        return _cache["items"]
+async def feed_extraits(tmdb: ClientTMDB, page: int = 1) -> list[dict]:
+    """Une page de bandes-annonces intégrables des titres en tendance (avec cache).
 
-    tendances = (await tmdb.tendances() or {}).get("results", [])[: _NB_MAX * 2]
+    Alimente le feed infini : l'app demande page 1, 2, 3… puis reboucle.
+    """
+    entree = _cache.get(page)
+    if entree is not None and time.monotonic() < entree["expire"]:
+        return entree["items"]
+
+    tendances = (await tmdb.tendances(page) or {}).get("results", [])
     # vidéos récupérées en parallèle : les temps d'attente réseau se recouvrent
     resultats = await asyncio.gather(
         *(_titre_avec_candidats(tmdb, b) for b in tendances))
@@ -145,12 +147,8 @@ async def feed_extraits(tmdb: ClientTMDB) -> list[dict]:
     for base, candidats in titres:
         # meilleure clé du titre parmi celles réellement intégrables
         cle = next((c for c in candidats if c in integrables), None)
-        if cle is None:
-            continue
-        items.append({**base, "cle_youtube": cle})
-        if len(items) >= _NB_MAX:
-            break
+        if cle is not None:
+            items.append({**base, "cle_youtube": cle})
 
-    _cache["items"] = items
-    _cache["expire"] = time.monotonic() + _DUREE_CACHE_S
+    _cache[page] = {"expire": time.monotonic() + _DUREE_CACHE_S, "items": items}
     return items

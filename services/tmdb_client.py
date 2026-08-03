@@ -50,9 +50,12 @@ class ClientTMDB:
         """Recherche séries + films (+ personnes, à filtrer) en un seul appel."""
         return await self._get("/search/multi", query=requete, include_adult=False)
 
-    async def tendances(self) -> dict | None:
-        """Séries + films (+ personnes, à filtrer) en tendance sur la semaine."""
-        return await self._get("/trending/all/week")
+    async def tendances(self, page: int = 1) -> dict | None:
+        """Séries + films (+ personnes, à filtrer) en tendance sur la semaine.
+
+        `page` : TMDB pagine les tendances (20 par page) — sert le feed infini.
+        """
+        return await self._get("/trending/all/week", page=page)
 
     async def series_a_l_antenne(self) -> dict | None:
         """Séries avec un épisode diffusé ces prochains jours."""

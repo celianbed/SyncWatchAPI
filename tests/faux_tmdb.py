@@ -143,7 +143,7 @@ class FauxClientTMDB:
         self.compteurs["search_multi"] += 1
         return copy.deepcopy(RECHERCHE_MULTI)
 
-    async def tendances(self):
+    async def tendances(self, page=1):
         # même forme de charge utile que search_multi (endpoint TMDB /trending)
         self.compteurs["tendances"] += 1
         return copy.deepcopy(RECHERCHE_MULTI)
