@@ -9,11 +9,13 @@ from core.limitation import LIMITE_INSCRIPTION, limiteur
 from core.securite import (creer_jeton_reset, creer_jeton_verification,
                            hacher_mot_de_passe)
 from db.database import get_db
-from models import (Film, Serie, SuivreFilm, SuivreSerie, Utilisateur,
-                       VisionnerFilm)
+from models import (Abonnement, Film, Serie, SuivreFilm, SuivreSerie,
+                       Utilisateur, VisionnerFilm)
 from schemas.recherche import ResultatRecherche
+from schemas.social import AvisProfil, ProfilPublic, ResumeUtilisateur
 from schemas.utilisateur import (UtilisateurCreation, UtilisateurMaj,
-                                     UtilisateurProfil, UtilisateurPublic)
+                                     UtilisateurPublic)
+from services import social_service
 from services.email_service import (Envoyeur, envoyer_mail_compte_existant,
                                     envoyer_mail_verification)
 
@@ -130,14 +132,110 @@ def mes_films_vus(
     return [ResultatRecherche.depuis_film(f) for f in films]
 
 
-@router.get("/{id_utilisateur}", response_model=UtilisateurProfil)
-def lire(
+# ── Social : abonnements (suivre un utilisateur ; amitié = suivi mutuel) ──
+
+def _utilisateur_actif_ou_404(db: Session, id_utilisateur: int) -> Utilisateur:
+    cible = db.get(Utilisateur, id_utilisateur)
+    if cible is None or cible.statut_compte != "actif":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Utilisateur introuvable.")
+    return cible
+
+
+@router.post("/{id_utilisateur}/abonner", status_code=status.HTTP_201_CREATED)
+def abonner(
     id_utilisateur: int,
-    _: Utilisateur = Depends(utilisateur_courant),  # profil réservé aux connectés
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
     db: Session = Depends(get_db),
 ):
-    """Profil public d'un utilisateur — sans adresse mail (voir UtilisateurProfil)."""
-    utilisateur = db.get(Utilisateur, id_utilisateur)
-    if utilisateur is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Utilisateur introuvable.")
-    return utilisateur
+    """S'abonner à un utilisateur (asymétrique). Suivi mutuel = amis."""
+    if id_utilisateur == utilisateur.id_utilisateur:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "On ne peut pas s'abonner à soi-même.")
+    _utilisateur_actif_ou_404(db, id_utilisateur)
+    cle = {"id_suiveur": utilisateur.id_utilisateur, "id_suivi": id_utilisateur}
+    if db.get(Abonnement, cle) is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Déjà abonné.")
+    db.add(Abonnement(**cle))
+    db.commit()
+    return {"statut": "abonne"}
+
+
+@router.delete("/{id_utilisateur}/abonner", status_code=status.HTTP_204_NO_CONTENT)
+def se_desabonner(
+    id_utilisateur: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    lien = db.get(Abonnement, {"id_suiveur": utilisateur.id_utilisateur,
+                               "id_suivi": id_utilisateur})
+    if lien is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Tu n'es pas abonné.")
+    db.delete(lien)
+    db.commit()
+
+
+@router.get("/{id_utilisateur}/abonnes", response_model=list[ResumeUtilisateur])
+def abonnes(
+    id_utilisateur: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Les utilisateurs qui suivent {id_utilisateur}."""
+    _utilisateur_actif_ou_404(db, id_utilisateur)
+    users = db.scalars(
+        select(Utilisateur)
+        .join(Abonnement, Abonnement.id_suiveur == Utilisateur.id_utilisateur)
+        .where(Abonnement.id_suivi == id_utilisateur)
+        .order_by(Abonnement.date_abonnement.desc())).all()
+    return social_service.resumes(db, utilisateur.id_utilisateur, list(users))
+
+
+@router.get("/{id_utilisateur}/abonnements", response_model=list[ResumeUtilisateur])
+def abonnements(
+    id_utilisateur: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Les utilisateurs que {id_utilisateur} suit."""
+    _utilisateur_actif_ou_404(db, id_utilisateur)
+    users = db.scalars(
+        select(Utilisateur)
+        .join(Abonnement, Abonnement.id_suivi == Utilisateur.id_utilisateur)
+        .where(Abonnement.id_suiveur == id_utilisateur)
+        .order_by(Abonnement.date_abonnement.desc())).all()
+    return social_service.resumes(db, utilisateur.id_utilisateur, list(users))
+
+
+@router.get("/{id_utilisateur}/series-suivies", response_model=list[ResultatRecherche])
+def series_suivies(
+    id_utilisateur: int,
+    _: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Séries suivies par un utilisateur (carrousel du profil public)."""
+    series = db.scalars(
+        select(Serie).join(SuivreSerie, SuivreSerie.id_serie == Serie.id_serie)
+        .where(SuivreSerie.id_utilisateur == id_utilisateur)
+        .order_by(SuivreSerie.date_ajout.desc()).limit(30)).all()
+    return [ResultatRecherche.depuis_serie(s) for s in series]
+
+
+@router.get("/{id_utilisateur}/avis", response_model=list[AvisProfil])
+def avis_utilisateur(
+    id_utilisateur: int,
+    _: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Derniers avis (titre + note) d'un utilisateur — section du profil public."""
+    return social_service.avis_profil(db, id_utilisateur)
+
+
+@router.get("/{id_utilisateur}", response_model=ProfilPublic)
+def lire(
+    id_utilisateur: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Profil public détaillé (compteurs + relation) — jamais l'adresse mail."""
+    cible = _utilisateur_actif_ou_404(db, id_utilisateur)
+    return social_service.profil_detaille(db, utilisateur.id_utilisateur, cible)

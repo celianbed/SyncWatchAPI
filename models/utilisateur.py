@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from db.database import Base
 
 if TYPE_CHECKING:
+    from models.abonnement import Abonnement
     from models.avis import Avis
     from models.notification import Appareil, Notification
     from models.suivi import SuivreFilm, SuivreSerie, VisionnerEpisode, VisionnerFilm
@@ -38,3 +39,8 @@ class Utilisateur(Base):
     avis: Mapped[list["Avis"]] = relationship(back_populates="utilisateur", cascade="all, delete-orphan")
     appareils: Mapped[list["Appareil"]] = relationship(back_populates="utilisateur", cascade="all, delete-orphan")
     notifications: Mapped[list["Notification"]] = relationship(back_populates="utilisateur", cascade="all, delete-orphan")
+    # abonnements = les gens que JE suis ; abonnes = les gens qui ME suivent
+    abonnements: Mapped[list["Abonnement"]] = relationship(
+        foreign_keys="Abonnement.id_suiveur", back_populates="suiveur", cascade="all, delete-orphan")
+    abonnes: Mapped[list["Abonnement"]] = relationship(
+        foreign_keys="Abonnement.id_suivi", back_populates="suivi", cascade="all, delete-orphan")

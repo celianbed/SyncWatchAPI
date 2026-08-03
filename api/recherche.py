@@ -2,10 +2,16 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from api.dependances import client_tmdb
+from api.dependances import client_tmdb, utilisateur_courant
 from core.limitation import LIMITE_RECHERCHE, limiteur
+from db.database import get_db
+from models import Utilisateur
 from schemas.recherche import ResultatRecherche
+from schemas.social import ResumeUtilisateur
+from services import social_service
 from services.tmdb_client import ClientTMDB
 
 router = APIRouter()
@@ -31,6 +37,24 @@ async def rechercher(
 ):
     """Recherche TMDB en direct (séries + films) — les personnes sont ignorées."""
     return _mapper_multi(await tmdb.search_multi(q))
+
+
+@router.get("/utilisateurs", response_model=list[ResumeUtilisateur])
+@limiteur.limit(LIMITE_RECHERCHE)
+def rechercher_utilisateurs(
+    request: Request,
+    q: str = Query(min_length=1, description="Pseudo à rechercher"),
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Recherche d'utilisateurs par pseudo (soi-même exclu)."""
+    users = db.scalars(
+        select(Utilisateur).where(
+            Utilisateur.pseudo.ilike(f"%{q.strip()}%"),
+            Utilisateur.id_utilisateur != utilisateur.id_utilisateur,
+            Utilisateur.statut_compte == "actif")
+        .order_by(Utilisateur.pseudo).limit(20)).all()
+    return social_service.resumes(db, utilisateur.id_utilisateur, list(users))
 
 
 @router.get("/tendances", response_model=list[ResultatRecherche])
