@@ -92,6 +92,48 @@ def avis_profil(db: Session, id_utilisateur: int, limite: int = 10) -> list[dict
     return resultats
 
 
+def compatibilite(db: Session, uid: int, cid: int) -> dict:
+    """Compatibilité de goûts uid ↔ cid.
+
+    Priorité à la **concordance des notes** sur les titres notés en commun (le
+    signal le plus fort) ; sinon **recouvrement** des bibliothèques ; sinon 0.
+    """
+    def biblio(u: int) -> tuple[set, set]:
+        series = set(db.scalars(select(SuivreSerie.id_serie)
+                                .where(SuivreSerie.id_utilisateur == u)).all())
+        films = set(db.scalars(select(SuivreFilm.id_film)
+                               .where(SuivreFilm.id_utilisateur == u)).all())
+        return series, films
+
+    def notes(u: int) -> dict:
+        d = {}
+        for id_s, id_f, note in db.execute(
+                select(Avis.id_serie, Avis.id_film, Avis.note)
+                .where(Avis.id_utilisateur == u, Avis.note.is_not(None),
+                       Avis.id_episode.is_(None))).all():
+            if id_s is not None:
+                d[("s", id_s)] = note
+            elif id_f is not None:
+                d[("f", id_f)] = note
+        return d
+
+    sa, fa = biblio(uid)
+    sb, fb = biblio(cid)
+    communs = len(sa & sb) + len(fa & fb)
+    taille_min = min(len(sa) + len(fa), len(sb) + len(fb))
+
+    na, nb = notes(uid), notes(cid)
+    notes_communes = set(na) & set(nb)
+    if notes_communes:
+        accord = sum(1 - abs(na[k] - nb[k]) / 9 for k in notes_communes) / len(notes_communes)
+        return {"pourcentage": round(accord * 100), "titres_communs": communs,
+                "base": "notes"}
+    if communs > 0 and taille_min:
+        return {"pourcentage": round(communs / taille_min * 100),
+                "titres_communs": communs, "base": "titres"}
+    return {"pourcentage": 0, "titres_communs": 0, "base": "aucune"}
+
+
 def fil_activite(db: Session, uid: int, limite: int = 40) -> list[dict]:
     """Fil d'activité des personnes suivies : avis, films vus, séries suivies.
 

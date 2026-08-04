@@ -12,7 +12,8 @@ from db.database import get_db
 from models import (Abonnement, Film, Serie, SuivreFilm, SuivreSerie,
                        Utilisateur, VisionnerFilm)
 from schemas.recherche import ResultatRecherche
-from schemas.social import AvisProfil, ProfilPublic, ResumeUtilisateur
+from schemas.social import (AvisProfil, Compatibilite, ProfilPublic,
+                               ResumeUtilisateur)
 from schemas.utilisateur import (UtilisateurCreation, UtilisateurMaj,
                                      UtilisateurPublic)
 from services import social_service
@@ -228,6 +229,17 @@ def avis_utilisateur(
 ):
     """Derniers avis (titre + note) d'un utilisateur — section du profil public."""
     return social_service.avis_profil(db, id_utilisateur)
+
+
+@router.get("/{id_utilisateur}/compatibilite", response_model=Compatibilite)
+def compatibilite(
+    id_utilisateur: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Compatibilité de goûts entre l'utilisateur courant et {id_utilisateur}."""
+    _utilisateur_actif_ou_404(db, id_utilisateur)
+    return social_service.compatibilite(db, utilisateur.id_utilisateur, id_utilisateur)
 
 
 @router.get("/{id_utilisateur}", response_model=ProfilPublic)

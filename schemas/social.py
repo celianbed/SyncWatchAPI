@@ -17,6 +17,14 @@ class ResumeUtilisateur(BaseModel):
     est_ami: bool     # suivi mutuel
 
 
+class Compatibilite(BaseModel):
+    """Score de compatibilité de goûts entre l'utilisateur courant et un autre."""
+
+    pourcentage: int  # 0..100
+    titres_communs: int
+    base: str  # "notes" (concordance des notes) | "titres" (recouvrement) | "aucune"
+
+
 class AvisProfil(BaseModel):
     """Un avis affiché sur le profil public : titre de la cible + note (sans commentaire)."""
 

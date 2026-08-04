@@ -128,6 +128,29 @@ def test_avis_de_mes_abonnements(client, db, jeton, inscrire):
     assert avis[0]["commentaire"] == "Top"
 
 
+def test_compatibilite_sur_les_notes(client, db, jeton, inscrire):
+    inscrire(pseudo="bob", adresse_mail="bob@example.com")
+    id_bob = _id(db, "bob")
+    jeton_bob = _jeton_de(client, "bob")
+    id_serie = client.post(f"/series/{REF_SERIE}/suivre",
+                           headers=_h(jeton)).json()["id_serie"]
+    client.post(f"/series/{REF_SERIE}/suivre", headers=_h(jeton_bob))
+    client.post("/avis", headers=_h(jeton), json={"id_serie": id_serie, "note": 8})
+    client.post("/avis", headers=_h(jeton_bob), json={"id_serie": id_serie, "note": 8})
+
+    r = client.get(f"/utilisateurs/{id_bob}/compatibilite", headers=_h(jeton)).json()
+    assert r["base"] == "notes"
+    assert r["pourcentage"] == 100  # notes identiques
+    assert r["titres_communs"] == 1
+
+
+def test_compatibilite_aucune_donnee(client, db, jeton, inscrire):
+    inscrire(pseudo="bob", adresse_mail="bob@example.com")
+    r = client.get(f"/utilisateurs/{_id(db, 'bob')}/compatibilite",
+                   headers=_h(jeton)).json()
+    assert r == {"pourcentage": 0, "titres_communs": 0, "base": "aucune"}
+
+
 def test_fil_activite(client, db, jeton, inscrire):
     inscrire(pseudo="bob", adresse_mail="bob@example.com")
     inscrire(pseudo="carol", adresse_mail="carol@example.com")
