@@ -1,7 +1,15 @@
 # schemas/social.py
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
+
+
+class RecommandationCreation(BaseModel):
+    """Recommander un titre à un ami."""
+
+    reference_tmdb: int
+    type: Literal["serie", "film"]
 
 
 class ResumeUtilisateur(BaseModel):

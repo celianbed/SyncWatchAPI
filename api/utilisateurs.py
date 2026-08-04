@@ -4,7 +4,7 @@ from fastapi import (APIRouter, BackgroundTasks, Depends, HTTPException,
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from api.dependances import envoyeur_mail, utilisateur_courant
+from api.dependances import client_tmdb, envoyeur_mail, utilisateur_courant
 from core.limitation import LIMITE_INSCRIPTION, limiteur
 from core.securite import (creer_jeton_reset, creer_jeton_verification,
                            hacher_mot_de_passe)
@@ -13,10 +13,11 @@ from models import (Abonnement, Film, Serie, SuivreFilm, SuivreSerie,
                        Utilisateur, VisionnerFilm)
 from schemas.recherche import ResultatRecherche
 from schemas.social import (AvisProfil, Compatibilite, ProfilPublic,
-                               ResumeUtilisateur)
+                               RecommandationCreation, ResumeUtilisateur)
 from schemas.utilisateur import (UtilisateurCreation, UtilisateurMaj,
                                      UtilisateurPublic)
-from services import notification_service, social_service
+from services import catalogue_service, notification_service, social_service
+from services.tmdb_client import ClientTMDB
 from services.email_service import (Envoyeur, envoyer_mail_compte_existant,
                                     envoyer_mail_verification)
 
@@ -246,6 +247,39 @@ def compatibilite(
     """Compatibilité de goûts entre l'utilisateur courant et {id_utilisateur}."""
     _utilisateur_actif_ou_404(db, id_utilisateur)
     return social_service.compatibilite(db, utilisateur.id_utilisateur, id_utilisateur)
+
+
+@router.post("/{id_utilisateur}/recommander", status_code=status.HTTP_201_CREATED)
+async def recommander(
+    id_utilisateur: int,
+    donnees: RecommandationCreation,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+    tmdb: ClientTMDB = Depends(client_tmdb),
+):
+    """Recommande un titre à un utilisateur : notification (+ push) « X te recommande … »."""
+    if id_utilisateur == utilisateur.id_utilisateur:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "On ne se recommande pas un titre à soi-même.")
+    _utilisateur_actif_ou_404(db, id_utilisateur)
+
+    if donnees.type == "serie":
+        serie = await catalogue_service.obtenir_serie(db, tmdb, donnees.reference_tmdb)
+        if serie is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Série inconnue de TMDB.")
+        titre, id_serie, id_film = serie.titre, serie.id_serie, None
+    else:
+        film = await catalogue_service.obtenir_film(db, tmdb, donnees.reference_tmdb)
+        if film is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Film inconnu de TMDB.")
+        titre, id_serie, id_film = film.titre, None, film.id_film
+
+    notification_service.notifier(
+        db, id_utilisateur, "recommandation",
+        f"{utilisateur.pseudo} te recommande {titre}",
+        id_acteur=utilisateur.id_utilisateur, id_serie=id_serie, id_film=id_film,
+        donnees={"reference_tmdb": str(donnees.reference_tmdb), "cible": donnees.type})
+    return {"statut": "recommande"}
 
 
 @router.get("/{id_utilisateur}", response_model=ProfilPublic)

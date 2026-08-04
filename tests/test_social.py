@@ -183,6 +183,29 @@ def test_suivre_cree_une_notif(client, db, jeton, inscrire):
     assert any(n["type"] == "abonnement" and "celian" in n["contenu"] for n in notifs)
 
 
+def test_recommander_cree_une_notif(client, db, jeton, inscrire):
+    inscrire(pseudo="bob", adresse_mail="bob@example.com")
+    id_bob = _id(db, "bob")
+    jeton_bob = _jeton_de(client, "bob")
+
+    r = client.post(f"/utilisateurs/{id_bob}/recommander", headers=_h(jeton),
+                    json={"reference_tmdb": REF_SERIE, "type": "serie"})
+    assert r.status_code == 201
+
+    notifs = client.get("/notifications", headers=_h(jeton_bob)).json()
+    reco = next(n for n in notifs if n["type"] == "recommandation")
+    assert "celian" in reco["contenu"]
+    assert reco["reference_tmdb"] == REF_SERIE  # tap → fiche
+    assert reco["cible"] == "serie"
+
+
+def test_recommander_soi_meme_refuse(client, db, jeton):
+    id_celian = _id(db, "celian")
+    r = client.post(f"/utilisateurs/{id_celian}/recommander", headers=_h(jeton),
+                    json={"reference_tmdb": REF_SERIE, "type": "serie"})
+    assert r.status_code == 400
+
+
 def test_social_exige_authentification(client, db, jeton, inscrire):
     inscrire(pseudo="bob", adresse_mail="bob@example.com")
     id_bob = _id(db, "bob")
