@@ -16,7 +16,7 @@ from schemas.social import (AvisProfil, Compatibilite, ProfilPublic,
                                ResumeUtilisateur)
 from schemas.utilisateur import (UtilisateurCreation, UtilisateurMaj,
                                      UtilisateurPublic)
-from services import social_service
+from services import notification_service, social_service
 from services.email_service import (Envoyeur, envoyer_mail_compte_existant,
                                     envoyer_mail_verification)
 
@@ -158,6 +158,12 @@ def abonner(
         raise HTTPException(status.HTTP_409_CONFLICT, "Déjà abonné.")
     db.add(Abonnement(**cle))
     db.commit()
+    # notif sociale : prévenir la personne suivie (+ push si elle a un appareil)
+    notification_service.notifier(
+        db, id_utilisateur, "abonnement",
+        f"{utilisateur.pseudo} a commencé à te suivre",
+        id_acteur=utilisateur.id_utilisateur,
+        donnees={"cible": "profil", "id_acteur": str(utilisateur.id_utilisateur)})
     return {"statut": "abonne"}
 
 

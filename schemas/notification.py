@@ -29,6 +29,7 @@ class NotificationPublique(BaseModel):
     id_episode: int | None
     id_serie: int | None
     id_film: int | None
+    id_acteur: int | None = None  # notif sociale : profil à ouvrir au tap
     # cible de navigation : la fiche à ouvrir au tap (résolue côté API)
     reference_tmdb: int | None = None
     cible: Literal["serie", "film"] | None = None

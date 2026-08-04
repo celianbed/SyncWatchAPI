@@ -173,6 +173,16 @@ def test_fil_activite(client, db, jeton, inscrire):
     assert dates == sorted(dates, reverse=True)  # trié par date décroissante
 
 
+def test_suivre_cree_une_notif(client, db, jeton, inscrire):
+    inscrire(pseudo="bob", adresse_mail="bob@example.com")
+    id_bob = _id(db, "bob")
+    jeton_bob = _jeton_de(client, "bob")
+    client.post(f"/utilisateurs/{id_bob}/abonner", headers=_h(jeton))  # celian suit bob
+
+    notifs = client.get("/notifications", headers=_h(jeton_bob)).json()
+    assert any(n["type"] == "abonnement" and "celian" in n["contenu"] for n in notifs)
+
+
 def test_social_exige_authentification(client, db, jeton, inscrire):
     inscrire(pseudo="bob", adresse_mail="bob@example.com")
     id_bob = _id(db, "bob")

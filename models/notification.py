@@ -38,6 +38,9 @@ class Notification(Base):
     id_episode: Mapped[int | None] = mapped_column(ForeignKey("episode.id_episode", ondelete="CASCADE"))
     id_serie: Mapped[int | None] = mapped_column(ForeignKey("serie.id_serie", ondelete="CASCADE"))
     id_film: Mapped[int | None] = mapped_column(ForeignKey("film.id_film", ondelete="CASCADE"))
+    # acteur d'une notif sociale (qui te suit / te recommande) — null sinon
+    id_acteur: Mapped[int | None] = mapped_column(
+        ForeignKey("utilisateur.id_utilisateur", ondelete="CASCADE"))
     type: Mapped[str] = mapped_column(String(30))
     contenu: Mapped[str] = mapped_column(String(255))
     date_envoi: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -50,9 +53,12 @@ class Notification(Base):
             "+ (id_film IS NOT NULL)::int <= 1",
             name="chk_notif_cible"),
         CheckConstraint(
-            "type IN ('nouvel_episode','nouvelle_saison','sortie_film','systeme','rappel')",
+            "type IN ('nouvel_episode','nouvelle_saison','sortie_film','systeme',"
+            "'rappel','abonnement','recommandation')",
             name="chk_type_notif"),
         Index("idx_notif_user", "id_utilisateur", "lue"),
     )
 
-    utilisateur: Mapped["Utilisateur"] = relationship(back_populates="notifications")
+    utilisateur: Mapped["Utilisateur"] = relationship(
+        foreign_keys=[id_utilisateur], back_populates="notifications")
+    acteur: Mapped["Utilisateur"] = relationship(foreign_keys=[id_acteur])

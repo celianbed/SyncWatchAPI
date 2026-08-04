@@ -72,6 +72,31 @@ def pousseur_par_defaut() -> Pousseur:
     return PousseurJournal()
 
 
+def notifier(db: Session, id_destinataire: int, type_: str, contenu: str, *,
+             pousseur: Pousseur | None = None, id_acteur: int | None = None,
+             id_serie: int | None = None, id_film: int | None = None,
+             donnees: dict | None = None) -> Notification:
+    """Crée une notification en base + push vers les appareils du destinataire.
+
+    Sert les évènements sociaux (abonnement, recommandation…). Le push part sur
+    le canal courant (FCM en prod, journal sinon) ; sans appareil enregistré, la
+    notification existe quand même dans l'app.
+    """
+    notif = Notification(id_utilisateur=id_destinataire, type=type_,
+                         contenu=contenu[:255], id_acteur=id_acteur,
+                         id_serie=id_serie, id_film=id_film)
+    db.add(notif)
+    db.commit()
+    db.refresh(notif)
+
+    jetons = db.scalars(select(Appareil.jeton_notif).where(
+        Appareil.id_utilisateur == id_destinataire)).all()
+    if jetons:
+        (pousseur or pousseur_par_defaut()).envoyer(
+            list(jetons), "SyncWatch", contenu[:255], donnees or {})
+    return notif
+
+
 def scanner_diffusions_du_jour(db: Session, pousseur: Pousseur | None = None) -> int:
     """Pour chaque épisode diffusé aujourd'hui d'une série suivie active :
     une notification en base + un push vers les appareils de l'utilisateur.
