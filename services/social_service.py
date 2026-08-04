@@ -3,7 +3,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from models import (Abonnement, Avis, Episode, Film, Saison, Serie,
-                       SuivreFilm, SuivreSerie, Utilisateur, VisionnerFilm)
+                       SuivreFilm, SuivreSerie, Utilisateur, VisionnerEpisode,
+                       VisionnerFilm)
 
 
 def _comptes_par_user(db: Session, colonne_user, ids: list[int]) -> dict[int, int]:
@@ -89,6 +90,43 @@ def avis_profil(db: Session, id_utilisateur: int, limite: int = 10) -> list[dict
             "id_avis": a.id_avis, "titre": titre, "type": type_,
             "reference_tmdb": ref, "note": a.note, "date_creation": a.date_creation,
         })
+    return resultats
+
+
+def progression_serie_abonnements(db: Session, uid: int, serie: Serie) -> list[dict]:
+    """Où en sont les personnes suivies (par uid) qui suivent aussi `serie`."""
+    episodes = db.execute(
+        select(Episode.id_episode, Saison.num_saison, Episode.num_episode)
+        .join(Saison, Episode.id_saison == Saison.id_saison)
+        .where(Saison.id_serie == serie.id_serie, Saison.num_saison > 0)
+        .order_by(Saison.num_saison, Episode.num_episode)).all()
+    total = len(episodes)
+    ids_episodes = [e[0] for e in episodes]
+
+    suivis = select(Abonnement.id_suivi).where(Abonnement.id_suiveur == uid)
+    users = db.scalars(
+        select(Utilisateur)
+        .join(SuivreSerie, SuivreSerie.id_utilisateur == Utilisateur.id_utilisateur)
+        .where(SuivreSerie.id_serie == serie.id_serie,
+               Utilisateur.id_utilisateur.in_(suivis))
+        .order_by(Utilisateur.pseudo)).all()
+
+    resultats = []
+    for u in users:
+        vus = set()
+        if ids_episodes:
+            vus = set(db.scalars(select(VisionnerEpisode.id_episode).where(
+                VisionnerEpisode.id_utilisateur == u.id_utilisateur,
+                VisionnerEpisode.id_episode.in_(ids_episodes))).all())
+        prochain_code = None
+        for id_ep, ns, ne in episodes:
+            if id_ep not in vus:
+                prochain_code = f"S{ns:02d}E{ne:02d}"
+                break
+        resultats.append({
+            "id_utilisateur": u.id_utilisateur, "pseudo": u.pseudo,
+            "avatar": u.avatar, "episodes_vus": len(vus),
+            "total_episodes": total, "prochain_code": prochain_code})
     return resultats
 
 

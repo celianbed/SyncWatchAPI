@@ -25,6 +25,17 @@ class ResumeUtilisateur(BaseModel):
     est_ami: bool     # suivi mutuel
 
 
+class ProgressionAmi(BaseModel):
+    """Où en est une personne suivie sur une série commune (anti-spoiler)."""
+
+    id_utilisateur: int
+    pseudo: str
+    avatar: str | None
+    episodes_vus: int
+    total_episodes: int
+    prochain_code: str | None  # « S03E05 » ; None si la série est finie
+
+
 class Compatibilite(BaseModel):
     """Score de compatibilité de goûts entre l'utilisateur courant et un autre."""
 

@@ -9,9 +9,10 @@ from models import Serie, SuivreSerie, Utilisateur
 from schemas.plateformes import PlateformesVisionnage
 from schemas.recherche import ResultatRecherche
 from schemas.serie import SaisonAvecEpisodes, SeriePublique
+from schemas.social import ProgressionAmi
 from schemas.suivi import SuiviCreation, SuiviMaj, SuiviPublic
 from schemas.visionnage import ProchainEpisode
-from services import catalogue_service, visionnage_service
+from services import catalogue_service, social_service, visionnage_service
 from services.tmdb_client import ClientTMDB
 
 router = APIRouter()
@@ -124,6 +125,21 @@ def prochain_episode(
         return None
     episode, num_saison = ligne
     return ProchainEpisode.depuis_episode(episode, num_saison)
+
+
+@router.get("/{reference_tmdb}/progression-abonnements",
+            response_model=list[ProgressionAmi])
+def progression_abonnements(
+    reference_tmdb: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Où en sont tes abonnements sur cette série (anti-spoiler)."""
+    serie = serie_par_reference(db, reference_tmdb)
+    if serie is None:  # série pas en cache = personne ne la suit
+        return []
+    return social_service.progression_serie_abonnements(
+        db, utilisateur.id_utilisateur, serie)
 
 
 @router.get("/{reference_tmdb}/similaires", response_model=list[ResultatRecherche])

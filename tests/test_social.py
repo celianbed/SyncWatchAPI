@@ -206,6 +206,27 @@ def test_recommander_soi_meme_refuse(client, db, jeton):
     assert r.status_code == 400
 
 
+def test_progression_abonnements(client, db, jeton, inscrire):
+    inscrire(pseudo="bob", adresse_mail="bob@example.com")
+    id_bob = _id(db, "bob")
+    client.post(f"/utilisateurs/{id_bob}/abonner", headers=_h(jeton))  # celian suit bob
+    jeton_bob = _jeton_de(client, "bob")
+    client.post(f"/series/{REF_SERIE}/suivre", headers=_h(jeton_bob))  # cache les épisodes
+
+    # bob regarde le 1er épisode
+    saisons = client.get(f"/series/{REF_SERIE}/saisons", headers=_h(jeton_bob)).json()
+    id_ep1 = saisons[0]["episodes"][0]["id_episode"]
+    client.post(f"/episodes/{id_ep1}/vu", headers=_h(jeton_bob))
+
+    prog = client.get(f"/series/{REF_SERIE}/progression-abonnements",
+                      headers=_h(jeton)).json()
+    assert len(prog) == 1
+    assert prog[0]["pseudo"] == "bob"
+    assert prog[0]["episodes_vus"] == 1
+    assert prog[0]["total_episodes"] >= 1
+    assert prog[0]["prochain_code"] is not None  # bob n'a pas fini
+
+
 def test_social_exige_authentification(client, db, jeton, inscrire):
     inscrire(pseudo="bob", adresse_mail="bob@example.com")
     id_bob = _id(db, "bob")
