@@ -12,11 +12,15 @@ def _entete(jeton):
 
 
 class FauxPousseur:
-    def __init__(self):
-        self.envois = []
+    """Doublure du canal push. `perimes` = jetons que le service déclarerait morts."""
 
-    def envoyer(self, jetons, titre, corps, donnees=None):
-        self.envois.append((jetons, titre, corps, donnees))
+    def __init__(self, perimes=()):
+        self.envois = []
+        self.perimes = list(perimes)
+
+    def envoyer(self, jetons, titre, corps, donnees=None, badge=None):
+        self.envois.append((jetons, titre, corps, donnees, badge))
+        return [j for j in jetons if j in self.perimes]
 
 
 @pytest.fixture()
@@ -75,11 +79,12 @@ def test_scan_cree_notification_et_pousse(client, jeton, db, diffusion_du_jour):
     creees = notification_service.scanner_diffusions_du_jour(db, pousseur)
     assert creees == 1
 
-    jetons, _, corps, donnees = pousseur.envois[0]
+    jetons, _, corps, donnees, badge = pousseur.envois[0]
     assert jetons == ["fcm-jeton-1"]
     assert "Les Chroniques" in corps and "S02E02" in corps
     # payload de navigation : ouvre la fiche série au tap
     assert donnees == {"reference_tmdb": REF_SERIE, "cible": "serie"}
+    assert badge == 1  # pastille iOS = notifications non lues
 
     notifications = client.get("/notifications", headers=_entete(jeton)).json()
     assert len(notifications) == 1
@@ -136,3 +141,15 @@ def test_notifications_sans_jeton(client):
     assert client.get("/notifications").status_code == 401
     assert client.post("/appareils",
                        json={"jeton_notif": "x", "plateforme": "web"}).status_code == 401
+
+
+def test_scan_retire_les_jetons_perimes(client, jeton, db, diffusion_du_jour):
+    # FCM répond « jeton inconnu » (app désinstallée) : l'appareil doit disparaître
+    pousseur = FauxPousseur(perimes=["fcm-jeton-1"])
+    notification_service.scanner_diffusions_du_jour(db, pousseur)
+    assert db.scalar(select(func.count()).select_from(Appareil)) == 0
+
+
+def test_scan_garde_les_jetons_valides(client, jeton, db, diffusion_du_jour):
+    notification_service.scanner_diffusions_du_jour(db, FauxPousseur())
+    assert db.scalar(select(func.count()).select_from(Appareil)) == 1

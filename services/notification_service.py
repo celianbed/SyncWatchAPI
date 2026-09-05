@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Protocol
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.orm import Session
 
 from core.config import settings
@@ -17,18 +17,25 @@ journal = logging.getLogger(__name__)
 
 
 class Pousseur(Protocol):
-    """Canal d'envoi push. `donnees` = payload de navigation (ex. reference_tmdb)."""
+    """Canal d'envoi push. `donnees` = payload de navigation (ex. reference_tmdb),
+    `badge` = pastille à afficher sur l'icône iOS.
+
+    Renvoie les jetons que le service a déclarés périmés, à retirer de la base.
+    """
 
     def envoyer(self, jetons: list[str], titre: str, corps: str,
-                donnees: dict | None = None) -> None: ...
+                donnees: dict | None = None,
+                badge: int | None = None) -> list[str]: ...
 
 
 class PousseurJournal:
     """Implémentation par défaut tant que Firebase n'est pas configuré : log seulement."""
 
     def envoyer(self, jetons: list[str], titre: str, corps: str,
-                donnees: dict | None = None) -> None:
+                donnees: dict | None = None,
+                badge: int | None = None) -> list[str]:
         journal.info("Push vers %d appareil(s) : %s — %s", len(jetons), titre, corps)
+        return []
 
 
 _firebase_pret = False
@@ -47,21 +54,31 @@ def _init_firebase() -> None:
 
 
 class PousseurFCM:
-    """Envoi push réel via Firebase Cloud Messaging (Android)."""
+    """Envoi push réel via Firebase Cloud Messaging (Android et iOS/APNs)."""
 
     def envoyer(self, jetons: list[str], titre: str, corps: str,
-                donnees: dict | None = None) -> None:
+                donnees: dict | None = None,
+                badge: int | None = None) -> list[str]:
         from firebase_admin import messaging
         message = messaging.MulticastMessage(
             tokens=jetons,
             notification=messaging.Notification(title=titre, body=corps),
             # les valeurs data FCM doivent être des chaînes (navigation au tap)
             data={cle: str(valeur) for cle, valeur in (donnees or {}).items()},
+            # iOS ne joue un son et ne badge l'icône que si APNs le demande
+            # explicitement ; sans ce bloc la notification arrive muette.
+            apns=messaging.APNSConfig(payload=messaging.APNSPayload(
+                aps=messaging.Aps(sound="default", badge=badge))),
         )
         reponse = messaging.send_each_for_multicast(message)
         if reponse.failure_count:
             journal.warning("Push FCM : %d/%d envois en échec",
                             reponse.failure_count, len(jetons))
+        # app désinstallée, jeton régénéré, projet Firebase changé : le jeton ne
+        # vaudra plus jamais rien, on le signale pour qu'il soit retiré de la base.
+        return [jeton for jeton, resultat in zip(jetons, reponse.responses)
+                if isinstance(resultat.exception,
+                              (messaging.UnregisteredError, messaging.SenderIdMismatchError))]
 
 
 def pousseur_par_defaut() -> Pousseur:
@@ -70,6 +87,20 @@ def pousseur_par_defaut() -> Pousseur:
         _init_firebase()
         return PousseurFCM()
     return PousseurJournal()
+
+
+def _non_lues(db: Session, id_utilisateur: int) -> int:
+    """Nombre de notifications non lues — sert de pastille sur l'icône iOS."""
+    return db.scalar(select(func.count()).select_from(Notification).where(
+        Notification.id_utilisateur == id_utilisateur, Notification.lue.is_(False))) or 0
+
+
+def _purger_jetons(db: Session, jetons: list[str]) -> None:
+    """Retire les appareils dont le jeton a été refusé définitivement par FCM."""
+    if not jetons:
+        return
+    db.execute(delete(Appareil).where(Appareil.jeton_notif.in_(jetons)))
+    journal.info("Push : %d jeton(s) périmé(s) retiré(s)", len(jetons))
 
 
 def notifier(db: Session, id_destinataire: int, type_: str, contenu: str, *,
@@ -92,8 +123,10 @@ def notifier(db: Session, id_destinataire: int, type_: str, contenu: str, *,
     jetons = db.scalars(select(Appareil.jeton_notif).where(
         Appareil.id_utilisateur == id_destinataire)).all()
     if jetons:
-        (pousseur or pousseur_par_defaut()).envoyer(
-            list(jetons), "SyncWatch", contenu[:255], donnees or {})
+        _purger_jetons(db, (pousseur or pousseur_par_defaut()).envoyer(
+            list(jetons), "SyncWatch", contenu[:255], donnees or {},
+            badge=_non_lues(db, id_destinataire)))
+        db.commit()
     return notif
 
 
@@ -132,8 +165,11 @@ def scanner_diffusions_du_jour(db: Session, pousseur: Pousseur | None = None) ->
                 Appareil.id_utilisateur == id_utilisateur)).all()
             if jetons:
                 # data : ouvre la fiche série au tap sur la notif
-                pousseur.envoyer(list(jetons), "SyncWatch", contenu[:255],
-                                 {"reference_tmdb": serie.reference_tmdb, "cible": "serie"})
+                db.flush()  # pour que la notif qu'on vient d'ajouter compte dans la pastille
+                _purger_jetons(db, pousseur.envoyer(
+                    list(jetons), "SyncWatch", contenu[:255],
+                    {"reference_tmdb": serie.reference_tmdb, "cible": "serie"},
+                    badge=_non_lues(db, id_utilisateur)))
 
     db.commit()
     return creees
