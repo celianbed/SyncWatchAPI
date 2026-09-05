@@ -1,5 +1,7 @@
 # api/legal.py — pages publiques exigées par la loi et par l'App Store :
 # mentions légales et politique de confidentialité.
+import html
+
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
@@ -18,14 +20,18 @@ MANQUANT = "— à compléter —"
 
 
 def _identite() -> dict[str, str]:
-    return {
-        "editeur_nom": settings.EDITEUR_NOM or MANQUANT,
-        "editeur_adresse": settings.EDITEUR_ADRESSE or MANQUANT,
-        "editeur_siret": settings.EDITEUR_SIRET or MANQUANT,
-        "contact": settings.CONTACT_EMAIL or MANQUANT,
-        "hebergeur": settings.HEBERGEUR or MANQUANT,
-        "hebergeur_bdd": settings.HEBERGEUR_BDD or MANQUANT,
+    """Valeurs échappées : elles viennent de l'environnement, donc d'une source de
+    confiance, mais string.Template n'échappe rien et l'échappement est gratuit."""
+    champs = {
+        "editeur_nom": settings.EDITEUR_NOM,
+        "editeur_adresse": settings.EDITEUR_ADRESSE,
+        "editeur_siret": settings.EDITEUR_SIRET,
+        "contact": settings.CONTACT_EMAIL,
+        "hebergeur": settings.HEBERGEUR,
+        "hebergeur_bdd": settings.HEBERGEUR_BDD,
     }
+    return {cle: html.escape(valeur) if valeur else MANQUANT
+            for cle, valeur in champs.items()}
 
 
 def _page(gabarit: str, titre: str) -> HTMLResponse:
