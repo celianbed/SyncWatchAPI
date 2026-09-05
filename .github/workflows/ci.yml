@@ -48,6 +48,32 @@ jobs:
       - name: Tests
         run: python -m pytest -q
 
+  # Vulnérabilités connues des dépendances. Volontairement hors du chemin du
+  # déploiement (deploy ne dépend que de « tests ») : une CVE publiée un mardi ne
+  # doit pas empêcher de livrer un correctif le mercredi, mais elle doit se voir.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # On audite l'environnement installé, et non le seul requirements.txt :
+      # les dépendances transitives sont couvertes de la même façon.
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt pip-audit
+
+      # PYSEC-2026-1325 (ecdsa) est écartée sciemment : le paquet est tiré par
+      # python-jose mais son code n'est jamais exécuté ici — jose choisit le
+      # backend « cryptography » dès qu'il est installé, ce qui est notre cas.
+      # Aucun correctif amont n'existe ; sans cette exception le job resterait
+      # rouge en permanence et plus personne ne le lirait.
+      - name: Vulnérabilités connues
+        run: pip-audit --ignore-vuln PYSEC-2026-1325
+
   # Déploiement Render — ne part QUE si les tests ci-dessus passent, et
   # uniquement sur un push vers main (jamais sur une Pull Request).
   # Prérequis côté Render : couper l'Auto-Deploy et copier le « Deploy Hook »,

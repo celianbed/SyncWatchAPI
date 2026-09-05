@@ -15,6 +15,7 @@ apscheduler==3.11.3
 slowapi==0.1.10
 sentry-sdk[fastapi]==2.66.1
 firebase-admin==7.1.0
-# vérification des jetons Sign in with Apple (signatures RS256/ES256 via python-jose)
-cryptography==49.0.0
+# vérification des jetons Sign in with Apple (signatures RS256/ES256 via python-jose).
+# 50.0.0 minimum : la 49 est touchée par PYSEC-2026-3552.
+cryptography==50.0.1
 pytest==9.1.1
