@@ -42,6 +42,7 @@ def lister_avis(
     id_serie: int | None = None,
     id_film: int | None = None,
     id_episode: int | None = None,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
     db: Session = Depends(get_db),
 ):
     """Les avis d'une cible — exactement un filtre parmi les trois."""
@@ -90,7 +91,13 @@ def mes_avis(
 
 
 @router.get("/{id_avis}", response_model=AvisPublic)
-def lire_avis(id_avis: int, db: Session = Depends(get_db)):
+def lire_avis(
+    id_avis: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Lecture réservée aux comptes connectés : sans jeton, les identifiants étant
+    séquentiels, on pourrait aspirer tous les avis et les pseudos de leurs auteurs."""
     return get_ou_404(db, Avis, id_avis, "Avis introuvable.")
 
 

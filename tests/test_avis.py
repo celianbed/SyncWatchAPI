@@ -89,16 +89,30 @@ def test_lister_par_cible(client, jeton, jeton2, cibles):
     client.post("/avis", headers=_entete(jeton),
                 json={"id_film": cibles["id_film"], "note": 9})
 
-    reponse = client.get("/avis", params={"id_serie": cibles["id_serie"]})
+    reponse = client.get("/avis", headers=_entete(jeton),
+                         params={"id_serie": cibles["id_serie"]})
     assert reponse.status_code == 200
     assert len(reponse.json()) == 2
     assert {a["utilisateur"]["pseudo"] for a in reponse.json()} == {"celian", "autre"}
 
 
-def test_lister_filtre_obligatoire(client, cibles):
-    assert client.get("/avis").status_code == 422
-    assert client.get("/avis", params={"id_serie": cibles["id_serie"],
-                                       "id_film": cibles["id_film"]}).status_code == 422
+def test_lister_filtre_obligatoire(client, jeton, cibles):
+    assert client.get("/avis", headers=_entete(jeton)).status_code == 422
+    assert client.get("/avis", headers=_entete(jeton),
+                      params={"id_serie": cibles["id_serie"],
+                              "id_film": cibles["id_film"]}).status_code == 422
+
+
+def test_lecture_des_avis_reservee_aux_connectes(client, jeton, cibles):
+    """Sans jeton, les identifiants étant séquentiels, on aspirerait tous les avis
+    et les pseudos de leurs auteurs à coups de curl."""
+    id_avis = client.post("/avis", headers=_entete(jeton),
+                          json={"id_serie": cibles["id_serie"], "note": 8}).json()["id_avis"]
+
+    assert client.get("/avis", params={"id_serie": cibles["id_serie"]}).status_code == 401
+    assert client.get(f"/avis/{id_avis}").status_code == 401
+    # avec un jeton, la lecture reste possible
+    assert client.get(f"/avis/{id_avis}", headers=_entete(jeton)).status_code == 200
 
 
 def test_mes_avis(client, jeton, jeton2, cibles):
@@ -147,7 +161,7 @@ def test_supprimer_avis(client, jeton, cibles):
                           json={"id_serie": cibles["id_serie"],
                                 "note": 8}).json()["id_avis"]
     assert client.delete(f"/avis/{id_avis}", headers=_entete(jeton)).status_code == 204
-    assert client.get(f"/avis/{id_avis}").status_code == 404
+    assert client.get(f"/avis/{id_avis}", headers=_entete(jeton)).status_code == 404
 
 
 def test_supprimer_avis_dautrui(client, jeton, jeton2, cibles):
