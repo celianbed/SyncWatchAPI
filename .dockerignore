@@ -1,0 +1,34 @@
+# Ce qui ne doit PAS entrer dans l'image.
+# Réduit la taille de l'image, accélère le build, et surtout : aucun secret dedans.
+
+# Secrets — l'image ne doit jamais les embarquer.
+# En développement, docker-compose monte le dépôt en volume : le .env local
+# reste disponible à l'exécution sans avoir été copié dans l'image.
+.env
+.env.*
+
+# Environnement Python local (les dépendances sont réinstallées dans l'image)
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.coverage*
+htmlcov/
+
+# Historique et outillage de dépôt
+.git/
+.github/
+.claude/
+
+# IDE et système
+.idea/
+.vscode/
+.DS_Store
+
+# Documents de conception (versionnés, mais inutiles à l'exécution)
+*.odt
+*.loo
+
+# Sauvegardes de base
+backups/
