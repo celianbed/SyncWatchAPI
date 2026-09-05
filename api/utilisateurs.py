@@ -9,8 +9,8 @@ from core.limitation import LIMITE_INSCRIPTION, limiteur
 from core.securite import (creer_jeton_reset, creer_jeton_verification,
                            hacher_mot_de_passe)
 from db.database import get_db
-from models import (Abonnement, Film, Serie, SuivreFilm, SuivreSerie,
-                       Utilisateur, VisionnerFilm)
+from models import (Abonnement, Film, Notification, Serie, SuivreFilm,
+                       SuivreSerie, Utilisateur, VisionnerFilm)
 from schemas.recherche import ResultatRecherche
 from schemas.social import (AvisProfil, Compatibilite, ProfilPublic,
                                RecommandationCreation, ResumeUtilisateur)
@@ -24,6 +24,11 @@ from services.email_service import (Envoyeur, envoyer_mail_compte_existant,
 
 router = APIRouter()
 
+
+# Une recommandation fait sonner le téléphone du destinataire. On exige donc un
+# lien social, et on plafonne les envois vers une même personne sur la journée :
+# suivre quelqu'un étant libre, le lien seul ne protégerait de rien.
+RECOMMANDATIONS_PAR_JOUR = 3
 
 MESSAGE_INSCRIPTION = ("Si cette adresse peut être utilisée, un mail de confirmation "
                        "vient d'être envoyé. Ouvre-le pour activer ton compte.")
@@ -281,6 +286,23 @@ async def recommander(
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "On ne se recommande pas un titre à soi-même.")
     _utilisateur_actif_ou_404(db, id_utilisateur)
+
+    if db.scalar(select(Abonnement.id_suivi).where(
+            Abonnement.id_suiveur == utilisateur.id_utilisateur,
+            Abonnement.id_suivi == id_utilisateur)) is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "On ne recommande qu'aux personnes que l'on suit.")
+
+    envoyees_aujourdhui = db.scalar(
+        select(func.count()).select_from(Notification).where(
+            Notification.id_utilisateur == id_utilisateur,
+            Notification.id_acteur == utilisateur.id_utilisateur,
+            Notification.type == "recommandation",
+            Notification.date_envoi >= func.current_date()))
+    if envoyees_aujourdhui >= RECOMMANDATIONS_PAR_JOUR:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Trop de recommandations envoyées à cette personne aujourd'hui.")
 
     if donnees.type == "serie":
         serie = await catalogue_service.obtenir_serie(db, tmdb, donnees.reference_tmdb)

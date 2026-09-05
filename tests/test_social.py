@@ -188,6 +188,7 @@ def test_recommander_cree_une_notif(client, db, jeton, inscrire):
     id_bob = _id(db, "bob")
     jeton_bob = _jeton_de(client, "bob")
 
+    client.post(f"/utilisateurs/{id_bob}/abonner", headers=_h(jeton))
     r = client.post(f"/utilisateurs/{id_bob}/recommander", headers=_h(jeton),
                     json={"reference_tmdb": REF_SERIE, "type": "serie"})
     assert r.status_code == 201
@@ -232,3 +233,47 @@ def test_social_exige_authentification(client, db, jeton, inscrire):
     id_bob = _id(db, "bob")
     assert client.post(f"/utilisateurs/{id_bob}/abonner").status_code == 401
     assert client.get("/search/utilisateurs", params={"q": "bob"}).status_code == 401
+
+
+def test_recommander_a_un_inconnu_refuse(client, db, jeton, inscrire):
+    """Sans lien social, on pourrait faire sonner le téléphone de n'importe qui."""
+    inscrire(pseudo="bob", adresse_mail="bob@example.com")
+    id_bob = _id(db, "bob")
+
+    r = client.post(f"/utilisateurs/{id_bob}/recommander", headers=_h(jeton),
+                    json={"reference_tmdb": REF_SERIE, "type": "serie"})
+    assert r.status_code == 403
+    assert client.get("/notifications", headers=_h(_jeton_de(client, "bob"))).json() == []
+
+
+def test_recommander_plafonne_par_jour(client, db, jeton, inscrire):
+    """Suivre quelqu'un est libre : sans plafond, le lien social ne protégerait
+    de rien et la recommandation deviendrait un canal de spam."""
+    inscrire(pseudo="bob", adresse_mail="bob@example.com")
+    id_bob = _id(db, "bob")
+    client.post(f"/utilisateurs/{id_bob}/abonner", headers=_h(jeton))
+
+    envoi = lambda: client.post(  # noqa: E731
+        f"/utilisateurs/{id_bob}/recommander", headers=_h(jeton),
+        json={"reference_tmdb": REF_SERIE, "type": "serie"})
+
+    for _ in range(3):
+        assert envoi().status_code == 201
+    assert envoi().status_code == 429
+
+
+def test_le_plafond_est_par_destinataire(client, db, jeton, inscrire):
+    # avoir saturé bob ne doit pas empêcher d'écrire à claire
+    for pseudo in ("bob", "claire"):
+        inscrire(pseudo=pseudo, adresse_mail=f"{pseudo}@example.com")
+    id_bob, id_claire = _id(db, "bob"), _id(db, "claire")
+    for cible in (id_bob, id_claire):
+        client.post(f"/utilisateurs/{cible}/abonner", headers=_h(jeton))
+
+    for _ in range(3):
+        client.post(f"/utilisateurs/{id_bob}/recommander", headers=_h(jeton),
+                    json={"reference_tmdb": REF_SERIE, "type": "serie"})
+
+    r = client.post(f"/utilisateurs/{id_claire}/recommander", headers=_h(jeton),
+                    json={"reference_tmdb": REF_SERIE, "type": "serie"})
+    assert r.status_code == 201
