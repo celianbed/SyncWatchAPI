@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>$titre — SyncWatch</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      padding: 48px 20px 96px;
+      background: #0F172A;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      color: #F1F5F9;
+      font-size: 16px;
+      line-height: 1.65;
+    }
+    main { max-width: 720px; margin: 0 auto; }
+    .marque {
+      font-size: 12px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: #64748B;
+      margin: 0 0 10px;
+    }
+    h1 { font-size: 30px; line-height: 1.2; margin: 0 0 8px; }
+    .maj { color: #64748B; font-size: 14px; margin: 0 0 40px; }
+    h2 {
+      font-size: 19px;
+      margin: 40px 0 12px;
+      padding-top: 24px;
+      border-top: 1px solid #1E293B;
+    }
+    h3 { font-size: 16px; margin: 24px 0 8px; color: #E2E8F0; }
+    p, li { color: #CBD5E1; }
+    ul { padding-left: 22px; }
+    li { margin-bottom: 6px; }
+    a { color: #A78BFA; }
+    strong { color: #F1F5F9; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #1E293B; vertical-align: top; }
+    th { color: #94A3B8; font-weight: 600; }
+    td { color: #CBD5E1; }
+    .encart {
+      background: #1E293B;
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin: 24px 0;
+    }
+    .encart p { margin: 0; }
+    footer {
+      margin-top: 56px;
+      padding-top: 20px;
+      border-top: 1px solid #1E293B;
+      color: #64748B;
+      font-size: 13px;
+    }
+    footer a { color: #94A3B8; }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="marque">SyncWatch</p>
+    <h1>$titre</h1>
+    <p class="maj">Dernière mise à jour : $maj</p>
+    $contenu
+    <footer>
+      <a href="/mentions-legales">Mentions légales</a> ·
+      <a href="/confidentialite">Politique de confidentialité</a>
+    </footer>
+  </main>
+</body>
+</html>

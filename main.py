@@ -8,7 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from api import (accueil, activite, auth, avis, calendrier, decouverte, films,
-                     notifications, recherche, series, stats, taches,
+                     legal, notifications, recherche, series, stats, taches,
                      utilisateurs, visionnage)
 from core.config import SECRET_KEY_PAR_DEFAUT, settings
 from core.limitation import brancher_limitation
@@ -107,3 +107,4 @@ app.include_router(avis.router, prefix="/avis", tags=["avis"])
 app.include_router(stats.router, prefix="/stats", tags=["stats"])
 app.include_router(notifications.router, tags=["notifications"])
 app.include_router(taches.router, prefix="/taches", tags=["taches"])
+app.include_router(legal.router, tags=["legal"])

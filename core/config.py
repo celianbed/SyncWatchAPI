@@ -82,6 +82,18 @@ class Settings(BaseSettings):
         # avec des \n littéraux, que le format PEM exige de retrouver en vrais sauts.
         return v.replace("\\n", "\n")
 
+    # Pages légales publiques (/mentions-legales, /confidentialite). L'identité de
+    # l'éditeur est exigée par la loi ; elle vit dans l'environnement et non dans
+    # le dépôt, l'adresse d'un entrepreneur individuel étant une donnée personnelle.
+    EDITEUR_NOM: str = ""
+    EDITEUR_ADRESSE: str = ""
+    EDITEUR_SIRET: str = ""
+    CONTACT_EMAIL: str = ""
+    # Hébergeurs, à compléter avec leur région : elle détermine si des données
+    # sortent de l'Union européenne, ce que la politique doit annoncer.
+    HEBERGEUR: str = "Render Services, Inc."
+    HEBERGEUR_BDD: str = "Neon Inc."
+
     # Suivi d'erreurs Sentry (vide = désactivé). DSN à définir en prod.
     SENTRY_DSN: str = ""
     SENTRY_ENV: str = "production"
