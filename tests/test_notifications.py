@@ -153,3 +153,57 @@ def test_scan_retire_les_jetons_perimes(client, jeton, db, diffusion_du_jour):
 def test_scan_garde_les_jetons_valides(client, jeton, db, diffusion_du_jour):
     notification_service.scanner_diffusions_du_jour(db, FauxPousseur())
     assert db.scalar(select(func.count()).select_from(Appareil)) == 1
+
+
+def _creer_notifs(db, client, jeton, nombre):
+    """N notifications système pour le compte courant, sans passer par le scan."""
+    from models import Notification, Utilisateur
+    from sqlalchemy import select as _select
+    uid = db.scalar(_select(Utilisateur.id_utilisateur).where(
+        Utilisateur.pseudo == "celian"))
+    for i in range(nombre):
+        db.add(Notification(id_utilisateur=uid, type="systeme", contenu=f"message {i}"))
+    db.commit()
+
+
+def test_liste_bornee_par_defaut(client, jeton, db):
+    _creer_notifs(db, client, jeton, 60)
+    assert len(client.get("/notifications", headers=_entete(jeton)).json()) == 50
+
+
+def test_limite_ajustable_et_plafonnee(client, jeton, db):
+    _creer_notifs(db, client, jeton, 60)
+    assert len(client.get("/notifications", headers=_entete(jeton),
+                          params={"limite": 10}).json()) == 10
+    # au-delà du plafond, la requête est refusée plutôt que servie
+    assert client.get("/notifications", headers=_entete(jeton),
+                      params={"limite": 500}).status_code == 422
+
+
+def test_compteur_non_lues_ignore_la_limite(client, jeton, db):
+    """La pastille doit rester juste au-delà de la limite de la liste."""
+    _creer_notifs(db, client, jeton, 60)
+    reponse = client.get("/notifications/nombre-non-lues", headers=_entete(jeton))
+    assert reponse.status_code == 200
+    assert reponse.json()["nombre"] == 60
+
+
+def test_compteur_suit_les_lectures(client, jeton, db, diffusion_du_jour):
+    notification_service.scanner_diffusions_du_jour(db)
+    notifs = client.get("/notifications", headers=_entete(jeton)).json()
+    client.patch(f"/notifications/{notifs[0]['id_notification']}/lue",
+                 headers=_entete(jeton))
+    assert client.get("/notifications/nombre-non-lues",
+                      headers=_entete(jeton)).json()["nombre"] == 0
+
+
+def test_cible_resolue_pour_toute_la_liste(client, jeton, db, diffusion_du_jour):
+    """La résolution par lot doit donner le même résultat que l'ancienne, une par une."""
+    notification_service.scanner_diffusions_du_jour(db)
+    _creer_notifs(db, client, jeton, 3)  # notifications sans cible, mélangées
+    notifs = client.get("/notifications", headers=_entete(jeton)).json()
+
+    avec_cible = [n for n in notifs if n["reference_tmdb"] is not None]
+    assert len(avec_cible) == 1
+    assert avec_cible[0]["cible"] == "serie"
+    assert all(n["cible"] is None for n in notifs if n["reference_tmdb"] is None)
