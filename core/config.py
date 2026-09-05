@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     # du feed « extraits ». Vide = pas de filtrage (le repli côté app couvre alors).
     YOUTUBE_API_KEY: str = ""
 
+    # Cache partagé (Redis). Vide = cache désactivé : l'application fonctionne
+    # normalement, chaque appel recalcule. C'est le cas en test et en local.
+    REDIS_URL: str = ""
+
     # Limitation de débit (anti brute-force / email bombing) — False dans les tests
     RATE_LIMIT_ACTIF: bool = True
 

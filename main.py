@@ -20,6 +20,7 @@ if settings.SENTRY_DSN:
                     traces_sample_rate=0.1, send_default_pii=False)
 from db.database import get_db
 from services import notification_service
+from services.cache import Cache
 from services.tmdb_client import ClientTMDB
 
 
@@ -36,6 +37,9 @@ async def lifespan(app: FastAPI):
     # un seul client TMDB pour toute la vie de l'app (réutilise les connexions)
     app.state.tmdb = ClientTMDB()
 
+    # cache partagé : REDIS_URL vide = désactivé, l'app recalcule à chaque appel
+    app.state.cache = Cache(settings.REDIS_URL)
+
     planificateur = None
     if settings.NOTIFICATIONS_PLANIFIEES:
         planificateur = BackgroundScheduler()
@@ -48,6 +52,7 @@ async def lifespan(app: FastAPI):
     if planificateur is not None:
         planificateur.shutdown(wait=False)
     await app.state.tmdb.fermer()
+    await app.state.cache.fermer()
 
 
 app = FastAPI(

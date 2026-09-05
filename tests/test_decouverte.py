@@ -8,7 +8,6 @@ def _entetes(jeton):
 
 
 def test_feed_extraits_liste_series_et_films(client, jeton):
-    decouverte_service.vider_cache()
     reponse = client.get("/decouverte/extraits", headers=_entetes(jeton))
     assert reponse.status_code == 200
     items = reponse.json()
@@ -19,14 +18,12 @@ def test_feed_extraits_liste_series_et_films(client, jeton):
 
 
 def test_feed_choisit_le_trailer_youtube_vf(client, jeton):
-    decouverte_service.vider_cache()
     items = client.get("/decouverte/extraits", headers=_entetes(jeton)).json()
     # Trailer VF YouTube préféré au Teaser EN et à la vidéo Vimeo
     assert all(i["cle_youtube"] == "cle_fr" for i in items)
 
 
 def test_feed_extraits_exige_authentification(client):
-    decouverte_service.vider_cache()
     assert client.get("/decouverte/extraits").status_code == 401
 
 

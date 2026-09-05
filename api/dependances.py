@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from core.securite import decoder_jeton_acces
 from db.database import get_db
 from models import Utilisateur
+from services.cache import Cache
 from services.email_service import Envoyeur, envoyeur_par_defaut
 from services.tmdb_client import ClientTMDB
 
@@ -15,6 +16,11 @@ schema_oauth2 = OAuth2PasswordBearer(tokenUrl="/auth/connexion")
 def client_tmdb(request: Request) -> ClientTMDB:
     """Client TMDB partagé, créé au démarrage de l'app (voir lifespan dans main.py)."""
     return request.app.state.tmdb
+
+
+def cache_partage(request: Request) -> Cache:
+    """Cache clé/valeur partagé, créé au démarrage de l'app (lifespan, main.py)."""
+    return request.app.state.cache
 
 
 def envoyeur_mail() -> Envoyeur:

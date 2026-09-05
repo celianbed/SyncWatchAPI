@@ -11,7 +11,7 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
-from api.dependances import client_tmdb, envoyeur_mail
+from api.dependances import cache_partage, client_tmdb, envoyeur_mail
 from core.config import settings
 
 settings.NOTIFICATIONS_PLANIFIEES = False  # pas de job APScheduler pendant les tests
@@ -23,6 +23,7 @@ from main import app  # noqa: E402
 
 limiteur.enabled = False  # ceinture + bretelles (quel que soit l'ordre d'import)
 from models import Utilisateur  # noqa: E402
+from tests.faux_cache import FauxCache  # noqa: E402
 from tests.faux_tmdb import FauxClientTMDB  # noqa: E402
 
 # base de test dédiée : même serveur Postgres, nom suffixé _test
@@ -74,6 +75,12 @@ def tmdb_faux():
     return FauxClientTMDB()
 
 
+@pytest.fixture()
+def faux_cache():
+    """Cache en mémoire, vide à chaque test : aucun Redis, aucune fuite entre tests."""
+    return FauxCache()
+
+
 class EnvoyeurMemoire:
     """Doublure de l'envoyeur d'email : capture les messages au lieu de les envoyer."""
 
@@ -91,13 +98,14 @@ def envoyeur():
 
 
 @pytest.fixture()
-def client(db, tmdb_faux, envoyeur):
+def client(db, tmdb_faux, envoyeur, faux_cache):
     """Client HTTP de test branché sur la session transactionnelle ci-dessus."""
     def _get_db_test():
         yield db
 
     app.dependency_overrides[get_db] = _get_db_test
     app.dependency_overrides[client_tmdb] = lambda: tmdb_faux
+    app.dependency_overrides[cache_partage] = lambda: faux_cache
     app.dependency_overrides[envoyeur_mail] = lambda: envoyeur
     with TestClient(app) as client_test:
         yield client_test

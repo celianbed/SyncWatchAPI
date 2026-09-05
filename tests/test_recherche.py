@@ -80,3 +80,44 @@ def test_rate_limit_recherche(client):
         limiteur.enabled = False
         limiteur.reset()
     assert 429 in codes
+
+
+# --- cache partagé : un second appel identique ne doit pas retaper TMDB --------
+
+
+def test_tendances_second_appel_servi_par_le_cache(client, tmdb_faux):
+    client.get("/search/tendances")
+    client.get("/search/tendances")
+    assert tmdb_faux.compteurs["tendances"] == 1
+
+
+def test_recherche_second_appel_servi_par_le_cache(client, tmdb_faux):
+    client.get("/search", params={"q": "chroniques"})
+    client.get("/search", params={"q": "chroniques"})
+    assert tmdb_faux.compteurs["search_multi"] == 1
+
+
+def test_recherche_casse_et_espaces_partagent_la_meme_entree(client, tmdb_faux):
+    """« Chroniques » et « chroniques  » désignent la même recherche."""
+    client.get("/search", params={"q": "Chroniques"})
+    client.get("/search", params={"q": "  chroniques "})
+    assert tmdb_faux.compteurs["search_multi"] == 1
+
+
+def test_recherches_differentes_ne_se_melangent_pas(client, tmdb_faux):
+    client.get("/search", params={"q": "chroniques"})
+    client.get("/search", params={"q": "grand film"})
+    assert tmdb_faux.compteurs["search_multi"] == 2
+
+
+def test_nouveautes_series_et_films_ont_des_entrees_distinctes(client, tmdb_faux):
+    client.get("/search/nouveautes", params={"type": "serie"})
+    client.get("/search/nouveautes", params={"type": "serie"})
+    client.get("/search/nouveautes", params={"type": "film"})
+    assert tmdb_faux.compteurs["series_a_l_antenne"] == 1
+    assert tmdb_faux.compteurs["films_a_l_affiche"] == 1
+
+
+def test_recherche_trop_longue_refusee(client):
+    """La longueur de q est bornée : elle part chez TMDB et sert de clé de cache."""
+    assert client.get("/search", params={"q": "a" * 101}).status_code == 422
