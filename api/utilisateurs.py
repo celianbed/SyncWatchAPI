@@ -17,6 +17,7 @@ from schemas.social import (AvisProfil, Compatibilite, ProfilPublic,
 from schemas.utilisateur import (UtilisateurCreation, UtilisateurMaj,
                                      UtilisateurPublic)
 from services import catalogue_service, notification_service, social_service
+from services.apple_auth import revoquer as revoquer_apple
 from services.tmdb_client import ClientTMDB
 from services.email_service import (Envoyeur, envoyer_mail_compte_existant,
                                     envoyer_mail_verification)
@@ -95,6 +96,24 @@ def modifier_moi(
     db.commit()
     db.refresh(utilisateur)
     return utilisateur
+
+
+@router.delete("/moi", status_code=status.HTTP_204_NO_CONTENT)
+def supprimer_moi(
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Supprime définitivement le compte : suivis, visionnages, avis, abonnements,
+    appareils et notifications partent en cascade.
+
+    Exigé par l'App Store (5.1.1 v) dès lors que l'app crée des comptes — et il
+    s'agit d'une vraie suppression, pas d'une désactivation.
+    """
+    if utilisateur.jeton_revocation_apple:
+        # Apple demande de révoquer l'accès avant d'oublier le compte
+        revoquer_apple(utilisateur.jeton_revocation_apple)
+    db.delete(utilisateur)
+    db.commit()
 
 
 # déclarés avant /{id_utilisateur} (deux segments : pas de collision, mais on groupe le "moi")

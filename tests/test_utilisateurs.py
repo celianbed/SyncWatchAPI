@@ -2,7 +2,7 @@
 from sqlalchemy import func, select
 
 from core.securite import verifier_mot_de_passe
-from models import Utilisateur
+from models import Appareil, SuivreSerie, Utilisateur
 from tests.conftest import DONNEES_INSCRIPTION
 from tests.faux_tmdb import REF_FILM, REF_SERIE
 
@@ -175,3 +175,28 @@ def test_mes_films_vus_vide(client, jeton):
 
 def test_profil_favoris_sans_jeton(client):
     assert client.get("/utilisateurs/moi/favoris").status_code == 401
+
+
+# --- Suppression de compte (exigence App Store 5.1.1 v) ---
+
+def test_supprimer_mon_compte(client, jeton, db):
+    assert client.delete("/utilisateurs/moi", headers=_entete(jeton)).status_code == 204
+    assert db.scalar(select(func.count()).select_from(Utilisateur)) == 0
+    # le jeton d'accès ne vaut plus rien
+    assert client.get("/utilisateurs/moi", headers=_entete(jeton)).status_code == 401
+
+
+def test_suppression_emporte_toutes_les_donnees(client, jeton, db):
+    client.post(f"/series/{REF_SERIE}/suivre", headers=_entete(jeton))
+    client.post("/appareils", headers=_entete(jeton),
+                json={"jeton_notif": "fcm-a-oublier", "plateforme": "ios"})
+
+    client.delete("/utilisateurs/moi", headers=_entete(jeton))
+
+    # tout ce qui pendait au compte part en cascade
+    assert db.scalar(select(func.count()).select_from(SuivreSerie)) == 0
+    assert db.scalar(select(func.count()).select_from(Appareil)) == 0
+
+
+def test_suppression_exige_un_jeton(client):
+    assert client.delete("/utilisateurs/moi").status_code == 401
