@@ -22,8 +22,9 @@ from core.securite import (creer_jeton_acces, creer_jeton_reset,
 from db.database import get_db
 from models import Utilisateur
 from schemas.jeton import Jeton
-from schemas.utilisateur import (ConnexionGoogle, DemandeReinitialisation,
-                                    DemandeVerification)
+from schemas.utilisateur import (ConnexionApple, ConnexionGoogle,
+                                    DemandeReinitialisation, DemandeVerification)
+from services.apple_auth import echanger_code, verifier_token_apple
 from services.email_service import (Envoyeur, envoyer_mail_reset,
                                     envoyer_mail_verification)
 
@@ -148,6 +149,74 @@ def connexion_google(request: Request, donnees: ConnexionGoogle,
 
     utilisateur.est_verifie = True  # Google a validé l'email → compte marqué vérifié
     utilisateur.date_derniere_connexion = func.now()
+    db.commit()
+    return Jeton(access_token=creer_jeton_acces(utilisateur.id_utilisateur))
+
+
+def _verifier_token_apple(identity_token: str) -> dict:
+    """Vérifie le jeton d'identité Apple (signature Apple + audience). ValueError si invalide."""
+    return verifier_token_apple(identity_token, settings.APPLE_BUNDLE_ID)
+
+
+@router.post("/apple", response_model=Jeton)
+@limiteur.limit(LIMITE_CONNEXION)
+def connexion_apple(request: Request, donnees: ConnexionApple,
+                    db: Session = Depends(get_db)):
+    """Connexion / inscription via Apple (exigée par l'App Store dès qu'un autre
+    login social est proposé). Identifie par le « sub », stable et toujours présent ;
+    à défaut par l'adresse mail, pour lier un compte existant."""
+    if not settings.APPLE_BUNDLE_ID:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            "Connexion Apple non configurée.")
+    try:
+        infos = _verifier_token_apple(donnees.identity_token)
+    except ValueError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Jeton Apple invalide",
+                            headers={"WWW-Authenticate": "Bearer"})
+
+    sub = infos.get("sub")
+    if not sub:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED,
+                            "Jeton Apple sans identifiant de compte")
+
+    email = infos.get("email")
+    # email_verified et is_private_email arrivent tantôt en booléen, tantôt en
+    # chaîne "true" selon la version de l'API Apple : on normalise.
+    verifie = str(infos.get("email_verified", False)).lower() == "true"
+    relais = str(infos.get("is_private_email", False)).lower() == "true"
+
+    utilisateur = db.scalar(select(Utilisateur).where(Utilisateur.sub_apple == sub))
+    if utilisateur is None and email and verifie:
+        # même adresse qu'un compte déjà là (mot de passe ou Google) : on le lie
+        utilisateur = db.scalar(select(Utilisateur).where(Utilisateur.adresse_mail == email))
+    if utilisateur is None:
+        if not email or not verifie:
+            # Apple ne renvoie l'adresse qu'à la toute première autorisation :
+            # sans elle et sans « sub » connu, impossible de créer le compte.
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                "Retire SyncWatch de tes réglages Apple ID (Mot de passe et sécurité "
+                "› Applications utilisant Apple), puis réessaie.")
+        utilisateur = Utilisateur(
+            adresse_mail=email,
+            # un relais privé a un préfixe aléatoire : il ne ferait pas un pseudo
+            pseudo=_pseudo_unique(
+                db, donnees.prenom or ("membre" if relais else email.split("@")[0])),
+            mot_de_passe=None,
+            est_verifie=True,
+        )
+        db.add(utilisateur)
+        db.flush()
+
+    if utilisateur.statut_compte != "actif":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Compte suspendu ou supprimé")
+
+    utilisateur.sub_apple = sub          # lie le compte Apple aux connexions suivantes
+    utilisateur.est_verifie = True       # Apple a validé l'adresse
+    utilisateur.date_derniere_connexion = func.now()
+    if donnees.code:  # sert à révoquer l'accès si le compte est supprimé un jour
+        utilisateur.jeton_revocation_apple = (
+            echanger_code(donnees.code) or utilisateur.jeton_revocation_apple)
     db.commit()
     return Jeton(access_token=creer_jeton_acces(utilisateur.id_utilisateur))
 

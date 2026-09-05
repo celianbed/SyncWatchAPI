@@ -3,7 +3,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from jose import jwt
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from core.config import settings
 from models import Utilisateur
@@ -335,3 +335,86 @@ def test_connexion_mdp_refusee_pour_compte_google(client, monkeypatch):
     client.post("/auth/google", json={"id_token": "x"})
     reponse = se_connecter(client, "social@example.com", "nimportequoi")
     assert reponse.status_code == 401  # pas 500
+
+
+# --- Connexion Apple ---
+
+def _config_apple(monkeypatch, payload):
+    """Configure APPLE_BUNDLE_ID + simule la vérification du jeton d'identité Apple."""
+    monkeypatch.setattr(settings, "APPLE_BUNDLE_ID", "com.syncwatch.syncwatchMobile")
+    monkeypatch.setattr("api.auth._verifier_token_apple", lambda _t: payload)
+
+
+def test_apple_cree_un_compte(client, db, monkeypatch):
+    _config_apple(monkeypatch, {"sub": "001.abc", "email": "lea@icloud.com",
+                                "email_verified": "true"})
+    reponse = client.post("/auth/apple",
+                          json={"identity_token": "peu-importe", "prenom": "Lea"})
+    assert reponse.status_code == 200
+    assert reponse.json()["access_token"]
+    u = db.scalar(select(Utilisateur).where(Utilisateur.sub_apple == "001.abc"))
+    assert u is not None and u.est_verifie is True and u.mot_de_passe is None
+    assert len(u.pseudo) >= 3
+
+
+def test_apple_reconnexion_sans_email(client, db, monkeypatch):
+    # aux connexions suivantes Apple ne renvoie plus l'adresse : le « sub » suffit
+    _config_apple(monkeypatch, {"sub": "001.abc", "email": "lea@icloud.com",
+                                "email_verified": "true"})
+    client.post("/auth/apple", json={"identity_token": "x"})
+    _config_apple(monkeypatch, {"sub": "001.abc"})
+    assert client.post("/auth/apple", json={"identity_token": "y"}).status_code == 200
+    assert db.scalar(select(func.count()).select_from(Utilisateur)) == 1  # pas de doublon
+
+
+def test_apple_lie_le_compte_existant(client, inscrire, db, monkeypatch):
+    inscrire(verifier=False)  # compte au mot de passe, non vérifié
+    id_avant = db.scalar(select(Utilisateur.id_utilisateur).where(
+        Utilisateur.adresse_mail == DONNEES_INSCRIPTION["adresse_mail"]))
+    _config_apple(monkeypatch, {"sub": "001.xyz",
+                                "email": DONNEES_INSCRIPTION["adresse_mail"],
+                                "email_verified": "true"})
+    assert client.post("/auth/apple", json={"identity_token": "x"}).status_code == 200
+    comptes = db.scalars(select(Utilisateur).where(
+        Utilisateur.adresse_mail == DONNEES_INSCRIPTION["adresse_mail"])).all()
+    assert len(comptes) == 1
+    assert comptes[0].id_utilisateur == id_avant
+    assert comptes[0].sub_apple == "001.xyz"   # le compte Apple y est rattaché
+    assert comptes[0].est_verifie is True      # Apple a validé l'adresse
+
+
+def test_apple_compte_inconnu_sans_email_refuse(client, monkeypatch):
+    # « sub » jamais vu et pas d'adresse : impossible de créer le compte
+    _config_apple(monkeypatch, {"sub": "001.jamais-vu"})
+    assert client.post("/auth/apple", json={"identity_token": "x"}).status_code == 401
+
+
+def test_apple_relais_prive_donne_un_pseudo_lisible(client, db, monkeypatch):
+    # l'adresse relais a un préfixe aléatoire : il ne doit pas servir de pseudo
+    _config_apple(monkeypatch, {"sub": "001.relais",
+                                "email": "a1b2c3d4e5@privaterelay.appleid.com",
+                                "email_verified": "true", "is_private_email": "true"})
+    client.post("/auth/apple", json={"identity_token": "x"})
+    u = db.scalar(select(Utilisateur).where(Utilisateur.sub_apple == "001.relais"))
+    assert u.pseudo.startswith("membre")
+
+
+def test_apple_token_invalide(client, monkeypatch):
+    monkeypatch.setattr(settings, "APPLE_BUNDLE_ID", "com.syncwatch.syncwatchMobile")
+
+    def _lever(_t):
+        raise ValueError("bad token")
+    monkeypatch.setattr("api.auth._verifier_token_apple", _lever)
+    assert client.post("/auth/apple", json={"identity_token": "faux"}).status_code == 401
+
+
+def test_apple_non_configure(client, monkeypatch):
+    monkeypatch.setattr(settings, "APPLE_BUNDLE_ID", "")
+    assert client.post("/auth/apple", json={"identity_token": "x"}).status_code == 503
+
+
+def test_connexion_mdp_refusee_pour_compte_apple(client, monkeypatch):
+    _config_apple(monkeypatch, {"sub": "001.sam", "email": "sam@icloud.com",
+                                "email_verified": "true"})
+    client.post("/auth/apple", json={"identity_token": "x"})
+    assert se_connecter(client, "sam@icloud.com", "nimportequoi").status_code == 401

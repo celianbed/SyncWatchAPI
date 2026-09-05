@@ -65,6 +65,23 @@ class Settings(BaseSettings):
     # Connexion Google : ID du client OAuth « Web » (audience du id_token à vérifier).
     GOOGLE_CLIENT_ID: str = ""
 
+    # Sign in with Apple : identifiant du bundle iOS (audience du jeton à vérifier).
+    # Vide = connexion Apple désactivée (503).
+    APPLE_BUNDLE_ID: str = ""
+    # Clé « Sign in with Apple » (Apple Developer › Keys) : sert uniquement à révoquer
+    # l'accès quand un compte est supprimé. Vide = pas de révocation (la suppression
+    # du compte marche quand même, seule la révocation chez Apple est sautée).
+    APPLE_TEAM_ID: str = ""
+    APPLE_KEY_ID: str = ""
+    APPLE_PRIVATE_KEY: str = ""  # contenu du .p8, sauts de ligne compris
+
+    @field_validator("APPLE_PRIVATE_KEY")
+    @classmethod
+    def restaurer_sauts_de_ligne(cls, v: str) -> str:
+        # une variable d'environnement tient sur une ligne : la clé .p8 y est collée
+        # avec des \n littéraux, que le format PEM exige de retrouver en vrais sauts.
+        return v.replace("\\n", "\n")
+
     # Suivi d'erreurs Sentry (vide = désactivé). DSN à définir en prod.
     SENTRY_DSN: str = ""
     SENTRY_ENV: str = "production"

@@ -27,6 +27,13 @@ class Utilisateur(Base):
     date_derniere_connexion: Mapped[datetime | None] = mapped_column(DateTime)
     statut_compte: Mapped[str] = mapped_column(String(20), server_default="actif")
     est_verifie: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    # Identifiant stable Sign in with Apple (claim "sub" du jeton). Apple ne donne
+    # l'adresse mail qu'à la première autorisation, et souvent un relais privé
+    # (@privaterelay.appleid.com) : le "sub" est le seul lien fiable vers le compte.
+    sub_apple: Mapped[str | None] = mapped_column(String(255), unique=True)
+    # Jeton de rafraîchissement Apple, seulement gardé pour pouvoir révoquer l'accès
+    # à la suppression du compte — Apple l'exige (App Store 5.1.1(v)).
+    jeton_revocation_apple: Mapped[str | None] = mapped_column(String(500))
 
     __table_args__ = (
         CheckConstraint("statut_compte IN ('actif','suspendu','supprime')", name="chk_statut_compte"),

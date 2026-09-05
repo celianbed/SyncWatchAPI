@@ -41,6 +41,16 @@ class ConnexionGoogle(BaseModel):
     id_token: str = Field(min_length=1)
 
 
+class ConnexionApple(BaseModel):
+    """Jeton d'identité Sign in with Apple, + le prénom que l'app n'obtient qu'à
+    la première autorisation (Apple ne le renvoie jamais ensuite)."""
+
+    identity_token: str = Field(min_length=1)
+    prenom: str | None = Field(default=None, max_length=50)
+    # code d'autorisation : échangé contre un jeton de révocation (suppression de compte)
+    code: str | None = Field(default=None, max_length=500)
+
+
 class UtilisateurMaj(BaseModel):
     """Mise à jour partielle du profil — les champs absents restent inchangés."""
 
