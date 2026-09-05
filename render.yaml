@@ -7,8 +7,16 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     # les migrations tournent au démarrage : idempotent, et le plan gratuit
-    # n'a pas de preDeployCommand
-    startCommand: alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port $PORT
+    # n'a pas de preDeployCommand.
+    #
+    # --forwarded-allow-ips : sans lui, uvicorn ignore X-Forwarded-For (il ne fait
+    # confiance qu'à 127.0.0.1 par défaut) et voit l'adresse du proxy Render pour
+    # tout le monde. La limitation de débit, indexée sur l'IP, devient alors un
+    # compteur unique partagé par tous les utilisateurs. « * » est sûr ici : le
+    # service n'est joignable qu'à travers le proxy, jamais en direct.
+    startCommand: >-
+      alembic upgrade head &&
+      uvicorn main:app --host 0.0.0.0 --port $PORT --forwarded-allow-ips='*'
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
