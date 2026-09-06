@@ -24,7 +24,7 @@ class Abonnement(Base):
         ForeignKey("utilisateur.id_utilisateur", ondelete="CASCADE"), primary_key=True)
     id_suivi: Mapped[int] = mapped_column(
         ForeignKey("utilisateur.id_utilisateur", ondelete="CASCADE"), primary_key=True)
-    date_abonnement: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    date_abonnement: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
         CheckConstraint("id_suiveur <> id_suivi", name="chk_pas_auto_abonnement"),

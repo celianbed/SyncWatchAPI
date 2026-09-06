@@ -22,7 +22,7 @@ class SuivreSerie(Base):
         ForeignKey("serie.id_serie", ondelete="CASCADE"), primary_key=True)
     statut_suivi: Mapped[str] = mapped_column(String(25))
     favori: Mapped[bool] = mapped_column(Boolean, server_default="false")
-    date_ajout: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    date_ajout: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
         CheckConstraint(
@@ -41,7 +41,7 @@ class VisionnerEpisode(Base):
         ForeignKey("utilisateur.id_utilisateur", ondelete="CASCADE"), primary_key=True)
     id_episode: Mapped[int] = mapped_column(
         ForeignKey("episode.id_episode", ondelete="CASCADE"), primary_key=True)
-    date_visionnage: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    date_visionnage: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     nombre_revisionnage: Mapped[int] = mapped_column(Integer, server_default="0")
 
     __table_args__ = (
@@ -79,7 +79,7 @@ class VisionnerFilm(Base):
     id_film: Mapped[int] = mapped_column(
         ForeignKey("film.id_film", ondelete="CASCADE"), primary_key=True)
     date_visionnage: Mapped[datetime] = mapped_column(
-        DateTime, primary_key=True, server_default=func.now())
+        DateTime(timezone=True), primary_key=True, server_default=func.now())
 
     utilisateur: Mapped["Utilisateur"] = relationship(back_populates="visionnages_films")
     film: Mapped["Film"] = relationship()

@@ -30,7 +30,7 @@ class Serie(Base):
     statut_diffusion: Mapped[str | None] = mapped_column(String(25))
     date_premiere_diffusion: Mapped[date | None] = mapped_column(Date)
     note_moyenne_tmdb: Mapped[float | None] = mapped_column(Numeric(3, 1))
-    date_maj_cache: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    date_maj_cache: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     saisons: Mapped[list["Saison"]] = relationship(
         back_populates="serie", cascade="all, delete-orphan", order_by="Saison.num_saison")

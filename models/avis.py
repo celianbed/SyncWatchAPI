@@ -22,8 +22,8 @@ class Avis(Base):
     id_episode: Mapped[int | None] = mapped_column(ForeignKey("episode.id_episode", ondelete="CASCADE"))
     note: Mapped[int | None] = mapped_column(SmallInteger)
     commentaire: Mapped[str | None] = mapped_column(Text)
-    date_creation: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    date_modification: Mapped[datetime | None] = mapped_column(DateTime, onupdate=func.now())
+    date_creation: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    date_modification: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
     __table_args__ = (
         # arc exclusif : exactement une cible

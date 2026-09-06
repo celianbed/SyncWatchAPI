@@ -19,8 +19,8 @@ class Appareil(Base):
         ForeignKey("utilisateur.id_utilisateur", ondelete="CASCADE"))
     jeton_notif: Mapped[str] = mapped_column(String(500), unique=True)
     plateforme: Mapped[str] = mapped_column(String(10))
-    date_enregistrement: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    date_derniere_activite: Mapped[datetime | None] = mapped_column(DateTime)
+    date_enregistrement: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    date_derniere_activite: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         CheckConstraint("plateforme IN ('android','ios','web')", name="chk_plateforme"),
@@ -43,7 +43,7 @@ class Notification(Base):
         ForeignKey("utilisateur.id_utilisateur", ondelete="CASCADE"))
     type: Mapped[str] = mapped_column(String(30))
     contenu: Mapped[str] = mapped_column(String(255))
-    date_envoi: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    date_envoi: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     lue: Mapped[bool] = mapped_column(Boolean, server_default="false")
 
     __table_args__ = (

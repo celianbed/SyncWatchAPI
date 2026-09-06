@@ -23,8 +23,8 @@ class Utilisateur(Base):
     mot_de_passe: Mapped[str | None] = mapped_column(String(255))
     pseudo: Mapped[str] = mapped_column(String(30), unique=True)
     avatar: Mapped[str | None] = mapped_column(String(500))
-    date_inscription: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    date_derniere_connexion: Mapped[datetime | None] = mapped_column(DateTime)
+    date_inscription: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    date_derniere_connexion: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     statut_compte: Mapped[str] = mapped_column(String(20), server_default="actif")
     est_verifie: Mapped[bool] = mapped_column(Boolean, server_default="false")
     # Identifiant stable Sign in with Apple (claim "sub" du jeton). Apple ne donne

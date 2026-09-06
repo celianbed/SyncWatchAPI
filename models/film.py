@@ -29,6 +29,6 @@ class Film(Base):
     duree: Mapped[int | None] = mapped_column(SmallInteger)
     date_sortie: Mapped[date | None] = mapped_column(Date)
     note_moyenne_tmdb: Mapped[float | None] = mapped_column(Numeric(3, 1))
-    date_maj_cache: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    date_maj_cache: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     genres: Mapped[list["Genre"]] = relationship(secondary=categoriser_film, back_populates="films")
