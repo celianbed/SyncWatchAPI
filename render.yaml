@@ -29,3 +29,9 @@ services:
         generateValue: true # généré par Render au premier déploiement
       - key: CRON_SECRET
         generateValue: true # à recopier dans cron-job.org (header X-Cron-Secret)
+      # Le planificateur interne (APScheduler) est désactivé : il vit dans le
+      # processus, donc un redéploiement au mauvais moment fait perdre la
+      # journée, et il ne resynchronise pas le cache TMDB — contrairement à
+      # /taches/scan-diffusions. Le cron externe fait autorité.
+      - key: NOTIFICATIONS_PLANIFIEES
+        value: false

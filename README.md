@@ -86,8 +86,41 @@ la prod plus bas.
 
 ## Déploiement
 
-`render.yaml` décrit le service (blueprint Render). Variables à fournir :
-`DATABASE_URL` (Neon, avec `?sslmode=require`) et `TMDB_API_TOKEN`.
-Le pipeline quotidien de notifications (`POST /taches/scan-diffusions`,
-header `X-Cron-Secret`) est déclenché par un cron externe car le plan
-gratuit Render endort le service.
+Le service tourne sur Render. `render.yaml` sert de référence pour la
+commande de démarrage et les variables attendues ; **les valeurs font foi
+dans le tableau de bord Render**, à renseigner là.
+
+Variables : `DATABASE_URL` (Neon, avec `?sslmode=require`), `TMDB_API_TOKEN`,
+`SECRET_KEY`, `CRON_SECRET`, `FIREBASE_CREDENTIALS_JSON`, et
+`NOTIFICATIONS_PLANIFIEES=false` (voir ci-dessous).
+
+### Tâches cron externes
+
+Elles ne sont pas gérées par Render : **sans elles, aucune notification de
+diffusion ne part**. Deux tâches, sur cron-job.org ou équivalent.
+
+| Tâche | Appel | Fréquence |
+|---|---|---|
+| Maintien en éveil | `GET /health` | toutes les 10 min |
+| Scan des diffusions | `POST /taches/scan-diffusions`, en-tête `X-Cron-Secret` | une fois par jour |
+
+Le maintien en éveil n'est pas un confort : le plan gratuit endort le service
+après 15 min d'inactivité et le réveil prend près d'une minute (mesuré à
+56,7 s), au-delà du délai maximal de cron-job.org — la tâche de scan
+échouerait donc systématiquement. Effet de bord bienvenu : `/health` fait un
+`SELECT 1`, ce qui garde aussi le compute Neon éveillé et supprime l'attente
+au premier lancement de l'app. Coût : environ 730 h/mois sur les 750 h
+offertes, donc plus de place pour un second service gratuit.
+
+La valeur de `X-Cron-Secret` est celle de `CRON_SECRET` **dans le tableau de
+bord Render** — elle y est générée, et n'est écrite nulle part dans le dépôt.
+
+### Pourquoi pas le planificateur interne
+
+APScheduler est présent dans `main.py` mais doit rester désactivé
+(`NOTIFICATIONS_PLANIFIEES=false`). Il vit dans le processus : un
+redéploiement à l'heure du job fait perdre la journée, sans rattrapage. Et
+surtout, `job_quotidien` ne resynchronise pas le cache TMDB, contrairement à
+`POST /taches/scan-diffusions` — le scan tournerait alors sur un cache qui
+n'apprend jamais les nouveaux épisodes, et ne créerait aucune notification
+sans lever la moindre erreur.
