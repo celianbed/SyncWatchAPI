@@ -200,3 +200,25 @@ def test_suppression_emporte_toutes_les_donnees(client, jeton, db):
 
 def test_suppression_exige_un_jeton(client):
     assert client.delete("/utilisateurs/moi").status_code == 401
+
+
+# --- Liste « À voir » (films mis de côté) ---
+
+def test_films_a_voir_listes(client, jeton, db):
+    """Le bouton « À voir plus tard » écrivait un statut que rien ne relisait."""
+    client.post(f"/films/{REF_FILM}/suivre", headers=_entete(jeton),
+                json={"statut": "a_voir"})
+    liste = client.get("/utilisateurs/moi/a-voir", headers=_entete(jeton)).json()
+    assert len(liste) == 1
+    assert liste[0]["reference_tmdb"] == REF_FILM
+    assert liste[0]["type"] == "film"
+
+
+def test_films_vus_exclus_de_la_liste_a_voir(client, jeton, db):
+    client.post(f"/films/{REF_FILM}/suivre", headers=_entete(jeton),
+                json={"statut": "vu"})
+    assert client.get("/utilisateurs/moi/a-voir", headers=_entete(jeton)).json() == []
+
+
+def test_a_voir_exige_un_jeton(client):
+    assert client.get("/utilisateurs/moi/a-voir").status_code == 401

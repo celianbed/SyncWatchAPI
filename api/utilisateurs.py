@@ -140,6 +140,25 @@ def mes_favoris(
             + [ResultatRecherche.depuis_film(f) for f in films])
 
 
+@router.get("/moi/a-voir", response_model=list[ResultatRecherche])
+def mes_a_voir(
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Films mis de côté pour plus tard — carrousel du profil.
+
+    Les séries ne sont pas concernées : une série « à voir » remonte déjà dans
+    « À regarder ce soir » (cf. STATUTS_ACTIFS), alors qu'un film mis de côté
+    n'apparaissait nulle part.
+    """
+    films = db.scalars(
+        select(Film).join(SuivreFilm, SuivreFilm.id_film == Film.id_film)
+        .where(SuivreFilm.id_utilisateur == utilisateur.id_utilisateur,
+               SuivreFilm.statut == "a_voir")
+        .order_by(Film.titre)).all()  # suivre_film n'horodate pas les ajouts
+    return [ResultatRecherche.depuis_film(f) for f in films]
+
+
 @router.get("/moi/films-vus", response_model=list[ResultatRecherche])
 def mes_films_vus(
     utilisateur: Utilisateur = Depends(utilisateur_courant),
