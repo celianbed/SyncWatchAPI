@@ -55,6 +55,12 @@ def verifier_token_apple(identity_token: str, audience: str) -> dict:
         raise ValueError(f"en-tête de jeton Apple illisible : {e}") from e
 
     try:
+        claims = jwt.get_unverified_claims(identity_token)
+        aud_recu = claims.get("aud")
+
+        print(f"[DEBUG REPR] aud reçu : {aud_recu!r}")
+        print(f"[DEBUG REPR] attendu  : {audience!r}")
+        print(f"[DEBUG EQUALS]      : {aud_recu == audience}")
         return jwt.decode(identity_token, _cle_pour(kid), algorithms=["RS256"],
                           audience=audience, issuer=EMETTEUR)
     
