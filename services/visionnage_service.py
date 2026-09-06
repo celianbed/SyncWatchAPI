@@ -13,21 +13,6 @@ def _episodes_vus(id_utilisateur: int):
         VisionnerEpisode.id_utilisateur == id_utilisateur)
 
 
-def prochain_episode(db: Session, id_utilisateur: int, id_serie: int):
-    """Premier épisode non vu de la série (saisons spéciales exclues).
-
-    Renvoie (Episode, num_saison) ou None si tout est vu.
-    """
-    return db.execute(
-        select(Episode, Saison.num_saison)
-        .join(Saison, Episode.id_saison == Saison.id_saison)
-        .where(Saison.id_serie == id_serie,
-               Saison.num_saison > 0,
-               Episode.id_episode.not_in(_episodes_vus(id_utilisateur)))
-        .order_by(Saison.num_saison, Episode.num_episode)
-        .limit(1)).first()
-
-
 def accueil(db: Session, id_utilisateur: int):
     """« À regarder ce soir » : le prochain épisode déjà diffusé de chaque
     série suivie active. Renvoie des lignes (Episode, num_saison, Serie).

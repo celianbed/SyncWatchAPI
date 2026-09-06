@@ -26,9 +26,8 @@ def test_abonner_et_profil(client, db, jeton, inscrire):
     assert client.post(f"/utilisateurs/{id_bob}/abonner", headers=_h(jeton)).status_code == 201
 
     profil = client.get(f"/utilisateurs/{id_bob}", headers=_h(jeton)).json()
-    assert profil["est_abonne"] is True
     assert profil["nb_abonnes"] == 1
-    assert profil["est_ami"] is False
+    assert (profil["est_abonne"], profil["me_suit"]) == (True, False)
     assert "adresse_mail" not in profil  # jamais de fuite d'email
 
     abos = client.get(f"/utilisateurs/{id_celian}/abonnements", headers=_h(jeton)).json()
@@ -46,8 +45,8 @@ def test_amitie_mutuelle(client, db, jeton, inscrire):
     client.post(f"/utilisateurs/{id_celian}/abonner", headers=_h(jeton_bob))  # bob -> celian
 
     profil = client.get(f"/utilisateurs/{id_bob}", headers=_h(jeton)).json()
-    assert profil["est_ami"] is True
-    assert profil["me_suit"] is True
+    # l'app en déduit l'amitié : suivi dans les deux sens
+    assert (profil["est_abonne"], profil["me_suit"]) == (True, True)
 
 
 def test_desabonner(client, db, jeton, inscrire):

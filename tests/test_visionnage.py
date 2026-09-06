@@ -81,9 +81,8 @@ def test_retirer_saison_vue(client, jeton, serie_suivie):
     reponse = client.delete(f"/saisons/{id_saison_1}/vu", headers=_entete(jeton))
     assert reponse.json()["episodes_retires"] == 0
 
-    corps = client.get(f"/series/{REF_SERIE}/prochain-episode",
-                       headers=_entete(jeton)).json()
-    assert (corps["num_saison"], corps["num_episode"]) == (1, 1)
+    saisons = client.get(f"/series/{REF_SERIE}/saisons", headers=_entete(jeton)).json()
+    assert all(e["vu"] is False for e in saisons[0]["episodes"])
 
 
 def test_retirer_saison_vue_ne_touche_pas_les_autres(client, jeton, serie_suivie):
@@ -124,42 +123,6 @@ def test_saisons_portent_l_etat_vu_de_chacun(client, jeton, serie_suivie):
 
 def test_saisons_demandent_une_authentification(client, serie_suivie):
     assert client.get(f"/series/{REF_SERIE}/saisons").status_code == 401
-
-
-def test_prochain_episode(client, jeton, serie_suivie):
-    reponse = client.get(f"/series/{REF_SERIE}/prochain-episode", headers=_entete(jeton))
-    assert reponse.status_code == 200
-    corps = reponse.json()
-    assert (corps["num_saison"], corps["num_episode"]) == (1, 1)
-    assert corps["deja_diffuse"] is True
-
-    client.post(f"/episodes/{serie_suivie['episodes'][0]}/vu", headers=_entete(jeton))
-    corps = client.get(f"/series/{REF_SERIE}/prochain-episode",
-                       headers=_entete(jeton)).json()
-    assert (corps["num_saison"], corps["num_episode"]) == (1, 2)
-
-
-def test_prochain_episode_non_diffuse(client, jeton, serie_suivie):
-    # tout le diffusé est vu -> le prochain est S2E2, pas encore diffusé
-    for id_saison in serie_suivie["saisons"]:
-        client.post(f"/saisons/{id_saison}/vu", headers=_entete(jeton))
-    corps = client.get(f"/series/{REF_SERIE}/prochain-episode",
-                       headers=_entete(jeton)).json()
-    assert (corps["num_saison"], corps["num_episode"]) == (2, 2)
-    assert corps["deja_diffuse"] is False
-
-
-def test_prochain_episode_tout_vu(client, jeton, serie_suivie):
-    for id_episode in serie_suivie["episodes"]:
-        client.post(f"/episodes/{id_episode}/vu", headers=_entete(jeton))
-    reponse = client.get(f"/series/{REF_SERIE}/prochain-episode", headers=_entete(jeton))
-    assert reponse.status_code == 200
-    assert reponse.json() is None
-
-
-def test_prochain_episode_serie_inconnue(client, jeton):
-    assert client.get("/series/999999/prochain-episode",
-                      headers=_entete(jeton)).status_code == 404
 
 
 def test_accueil(client, jeton, serie_suivie):

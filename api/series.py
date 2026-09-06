@@ -1,20 +1,18 @@
 # api/series.py
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
-
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from api.communs import recommandations, serie_ou_404, serie_par_reference
 from api.dependances import client_tmdb, utilisateur_courant
 from db.database import get_db
-from models import Episode, Saison, Serie, SuivreSerie, Utilisateur, VisionnerEpisode
+from models import Episode, Saison, SuivreSerie, Utilisateur, VisionnerEpisode
 from schemas.plateformes import PlateformesVisionnage
 from schemas.recherche import ResultatRecherche
 from schemas.serie import SaisonAvecEpisodes, SeriePublique
 from schemas.social import ProgressionAmi
 from schemas.suivi import SuiviCreation, SuiviMaj, SuiviPublic
-from schemas.visionnage import ProchainEpisode
-from services import catalogue_service, social_service, visionnage_service
+from services import catalogue_service, social_service
 from services.tmdb_client import ClientTMDB
 
 router = APIRouter()
@@ -131,21 +129,6 @@ def saisons_serie(
             episode.vu = episode.id_episode in vus
         saisons.append(modele)
     return saisons
-
-
-@router.get("/{reference_tmdb}/prochain-episode", response_model=ProchainEpisode | None)
-def prochain_episode(
-    reference_tmdb: int,
-    utilisateur: Utilisateur = Depends(utilisateur_courant),
-    db: Session = Depends(get_db),
-):
-    """Premier épisode non vu (saisons spéciales exclues) ; null si tout est vu."""
-    serie = serie_ou_404(db, reference_tmdb)
-    ligne = visionnage_service.prochain_episode(db, utilisateur.id_utilisateur, serie.id_serie)
-    if ligne is None:
-        return None
-    episode, num_saison = ligne
-    return ProchainEpisode.depuis_episode(episode, num_saison)
 
 
 @router.get("/{reference_tmdb}/progression-abonnements",

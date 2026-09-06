@@ -74,12 +74,3 @@ class UtilisateurPublic(BaseModel):
     est_verifie: bool
 
 
-class UtilisateurProfil(BaseModel):
-    """Profil d'un AUTRE utilisateur : jamais l'adresse mail (fuite de données)."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id_utilisateur: int
-    pseudo: str
-    avatar: str | None
-    date_inscription: datetime

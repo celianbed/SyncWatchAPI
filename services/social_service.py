@@ -40,7 +40,6 @@ def resumes(db: Session, uid_courant: int, users: list[Utilisateur]) -> list[dic
             "nb_films": nb_films.get(uid, 0),
             "est_abonne": abonne,
             "me_suit": suit,
-            "est_ami": abonne and suit,
         })
     return resultats
 
@@ -256,5 +255,4 @@ def profil_detaille(db: Session, uid_courant: int, cible: Utilisateur) -> dict:
         "nb_series": nb_series,
         "est_abonne": est_abonne,
         "me_suit": me_suit,
-        "est_ami": est_abonne and me_suit,
     }
