@@ -1,12 +1,13 @@
 # api/avis.py
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.communs import du_proprietaire_ou_404, get_ou_404
 from api.dependances import utilisateur_courant
 from db.database import get_db
-from models import Abonnement, Avis, Episode, Film, Serie, Utilisateur
+from models import (Abonnement, Avis, Episode, Film, Saison, Serie,
+                    Utilisateur, VisionnerEpisode)
 from schemas.avis import AvisCreation, AvisMaj, AvisPublic
 
 router = APIRouter()
@@ -70,14 +71,48 @@ def avis_de_mes_abonnements(
     utilisateur: Utilisateur = Depends(utilisateur_courant),
     db: Session = Depends(get_db),
 ):
-    """Avis d'une cible, limités aux personnes que l'utilisateur courant suit."""
+    """Avis d'une cible, limités aux personnes que l'utilisateur courant suit.
+
+    Sur une série, le commentaire d'une personne plus avancée que vous est
+    retiré : c'est le seul endroit d'où viennent les spoilers entre amis, et
+    nous sommes les seuls à pouvoir le savoir, puisque nous suivons les
+    épisodes un à un. La note reste visible — un chiffre ne divulgue rien.
+    """
     nom, valeur = _cible_unique(id_serie, id_film, id_episode)
     suivis = select(Abonnement.id_suivi).where(
         Abonnement.id_suiveur == utilisateur.id_utilisateur)
-    return db.scalars(
+    avis = db.scalars(
         select(Avis).where(getattr(Avis, nom) == valeur,
                            Avis.id_utilisateur.in_(suivis))
         .order_by(Avis.date_creation.desc())).all()
+
+    if id_serie is None:
+        # un film se voit d'un bloc, il n'y a pas de « plus avancé »
+        return [AvisPublic.model_validate(a) for a in avis]
+
+    return _masquer_les_plus_avances(db, utilisateur, id_serie, avis)
+
+
+def _masquer_les_plus_avances(
+    db: Session, utilisateur: Utilisateur, id_serie: int, avis: list[Avis]
+) -> list[AvisPublic]:
+    """Retire le commentaire des auteurs ayant vu plus d'épisodes que vous."""
+    vus = dict(db.execute(
+        select(VisionnerEpisode.id_utilisateur, func.count())
+        .join(Episode, Episode.id_episode == VisionnerEpisode.id_episode)
+        .join(Saison, Saison.id_saison == Episode.id_saison)
+        .where(Saison.id_serie == id_serie)
+        .group_by(VisionnerEpisode.id_utilisateur)).all())
+    les_miens = vus.get(utilisateur.id_utilisateur, 0)
+
+    resultat = []
+    for a in avis:
+        public = AvisPublic.model_validate(a)
+        if a.commentaire and vus.get(a.id_utilisateur, 0) > les_miens:
+            public.commentaire = None
+            public.masque = True
+        resultat.append(public)
+    return resultat
 
 
 # déclaré avant /{id_avis}, sinon "moi" serait capté comme un id

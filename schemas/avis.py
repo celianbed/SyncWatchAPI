@@ -50,3 +50,6 @@ class AvisPublic(BaseModel):
     commentaire: str | None
     date_creation: datetime
     date_modification: datetime | None
+    # Le commentaire d'une personne plus avancée que vous dans la série est
+    # retiré avant l'envoi : la note, elle, ne divulgue rien.
+    masque: bool = False

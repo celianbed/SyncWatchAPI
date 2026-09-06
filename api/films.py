@@ -29,6 +29,7 @@ def _nombre_visionnages(db: Session, id_utilisateur: int, id_film: int) -> int:
 @router.get("/{reference_tmdb}", response_model=FilmPublic)
 async def fiche_film(
     reference_tmdb: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
     db: Session = Depends(get_db),
     tmdb: ClientTMDB = Depends(client_tmdb),
 ):
@@ -134,7 +135,9 @@ def etat_visionnage_film(
 
 @router.get("/{reference_tmdb}/similaires", response_model=list[ResultatRecherche])
 async def films_similaires(
-    reference_tmdb: int, tmdb: ClientTMDB = Depends(client_tmdb)
+    reference_tmdb: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    tmdb: ClientTMDB = Depends(client_tmdb),
 ):
     """Recommandations TMDB pour ce film — rangée « Titres similaires »."""
     return await recommandations(tmdb, "movie", "film", reference_tmdb)
@@ -143,6 +146,7 @@ async def films_similaires(
 @router.get("/{reference_tmdb}/plateformes", response_model=PlateformesVisionnage)
 async def films_plateformes(
     reference_tmdb: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
     pays: str = Query(default="FR", min_length=2, max_length=2),
     tmdb: ClientTMDB = Depends(client_tmdb),
 ):

@@ -2,7 +2,7 @@
 import pytest
 from sqlalchemy import select
 
-from models import Episode
+from models import Episode, Utilisateur
 from tests.faux_tmdb import REF_FILM, REF_SERIE
 
 
@@ -15,7 +15,8 @@ def cibles(client, jeton, db):
     """Série suivie + film en cache : renvoie des ids internes valides pour un avis."""
     id_serie = client.post(f"/series/{REF_SERIE}/suivre",
                            headers=_entete(jeton)).json()["id_serie"]
-    id_film = client.get(f"/films/{REF_FILM}").json()["id_film"]
+    id_film = client.get(f"/films/{REF_FILM}",
+                         headers=_entete(jeton)).json()["id_film"]
     id_episode = db.scalar(select(Episode.id_episode).order_by(Episode.id_episode))
     return {"id_serie": id_serie, "id_film": id_film, "id_episode": id_episode}
 
@@ -169,3 +170,78 @@ def test_supprimer_avis_dautrui(client, jeton, jeton2, cibles):
                           json={"id_serie": cibles["id_serie"],
                                 "note": 8}).json()["id_avis"]
     assert client.delete(f"/avis/{id_avis}", headers=_entete(jeton2)).status_code == 404
+
+
+def _voir(client, jeton, ids_episodes):
+    for id_episode in ids_episodes:
+        client.post(f"/episodes/{id_episode}/vu", headers=_entete(jeton))
+
+
+@pytest.fixture()
+def duo(client, db, jeton, jeton2, cibles):
+    """Je suis « autre », et la série est en cache : renvoie de quoi doser
+    la progression de chacun."""
+    id_autre = db.scalar(select(Utilisateur.id_utilisateur).where(
+        Utilisateur.pseudo == "autre"))
+    client.post(f"/utilisateurs/{id_autre}/abonner", headers=_entete(jeton))
+    saisons = client.get(f"/series/{REF_SERIE}/saisons",
+                         headers=_entete(jeton)).json()
+    episodes = [e["id_episode"] for s in saisons for e in s["episodes"]]
+    return {"episodes": episodes, "id_serie": cibles["id_serie"],
+            "id_film": cibles["id_film"]}
+
+
+def test_avis_dun_ami_plus_avance_est_masque(client, jeton, jeton2, duo):
+    """Le seul endroit d'où viennent les spoilers entre amis : l'avis de série
+    d'une personne qui a vu plus d'épisodes que vous."""
+    _voir(client, jeton2, duo["episodes"])      # « autre » a tout vu
+    _voir(client, jeton, duo["episodes"][:1])   # moi, un seul épisode
+
+    client.post("/avis", headers=_entete(jeton2),
+                json={"id_serie": duo["id_serie"], "note": 9,
+                      "commentaire": "La fin est incroyable."})
+
+    avis = client.get("/avis/abonnements", headers=_entete(jeton),
+                      params={"id_serie": duo["id_serie"]}).json()
+    assert len(avis) == 1
+    assert avis[0]["masque"] is True
+    assert avis[0]["commentaire"] is None
+    assert avis[0]["note"] == 9, "un chiffre ne divulgue rien : la note reste"
+
+
+def test_avis_dun_ami_moins_avance_reste_lisible(client, jeton, jeton2, duo):
+    _voir(client, jeton2, duo["episodes"][:1])
+    _voir(client, jeton, duo["episodes"])
+
+    client.post("/avis", headers=_entete(jeton2),
+                json={"id_serie": duo["id_serie"], "note": 7,
+                      "commentaire": "Bon début."})
+
+    avis = client.get("/avis/abonnements", headers=_entete(jeton),
+                      params={"id_serie": duo["id_serie"]}).json()
+    assert avis[0]["masque"] is False
+    assert avis[0]["commentaire"] == "Bon début."
+
+
+def test_avis_sans_commentaire_nest_pas_dit_masque(client, jeton, jeton2, duo):
+    # une note seule n'a rien à cacher : la signaler masquée serait mensonger
+    _voir(client, jeton2, duo["episodes"])
+
+    client.post("/avis", headers=_entete(jeton2),
+                json={"id_serie": duo["id_serie"], "note": 9})
+
+    avis = client.get("/avis/abonnements", headers=_entete(jeton),
+                      params={"id_serie": duo["id_serie"]}).json()
+    assert avis[0]["masque"] is False
+
+
+def test_avis_de_film_jamais_masque(client, jeton, jeton2, duo):
+    # un film se voit d'un bloc : « plus avancé » n'a pas de sens
+    client.post("/avis", headers=_entete(jeton2),
+                json={"id_film": duo["id_film"], "note": 8,
+                      "commentaire": "Excellent."})
+
+    avis = client.get("/avis/abonnements", headers=_entete(jeton),
+                      params={"id_film": duo["id_film"]}).json()
+    assert avis[0]["masque"] is False
+    assert avis[0]["commentaire"] == "Excellent."

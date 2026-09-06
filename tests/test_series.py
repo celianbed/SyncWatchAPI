@@ -9,8 +9,8 @@ def _entete(jeton):
     return {"Authorization": f"Bearer {jeton}"}
 
 
-def test_fiche_serie(client):
-    reponse = client.get(f"/series/{REF_SERIE}")
+def test_fiche_serie(client_connecte):
+    reponse = client_connecte.get(f"/series/{REF_SERIE}")
     assert reponse.status_code == 200
     corps = reponse.json()
     assert corps["titre"] == "Les Chroniques"
@@ -18,14 +18,14 @@ def test_fiche_serie(client):
     assert {g["libelle"] for g in corps["genres"]} == {"Drame", "Science-Fiction & Fantastique"}
 
 
-def test_fiche_servie_du_cache(client, tmdb_faux):
-    client.get(f"/series/{REF_SERIE}")
-    client.get(f"/series/{REF_SERIE}")
+def test_fiche_servie_du_cache(client_connecte, tmdb_faux):
+    client_connecte.get(f"/series/{REF_SERIE}")
+    client_connecte.get(f"/series/{REF_SERIE}")
     assert tmdb_faux.compteurs["get_serie"] == 1
 
 
-def test_fiche_inconnue(client):
-    assert client.get("/series/999999").status_code == 404
+def test_fiche_inconnue(client_connecte):
+    assert client_connecte.get("/series/999999").status_code == 404
 
 
 def test_suivre_sans_jeton(client):

@@ -2,8 +2,8 @@
 from tests.faux_tmdb import REF_FILM, REF_SERIE
 
 
-def test_plateformes_serie(client, tmdb_faux):
-    reponse = client.get(f"/series/{REF_SERIE}/plateformes")
+def test_plateformes_serie(client_connecte, tmdb_faux):
+    reponse = client_connecte.get(f"/series/{REF_SERIE}/plateformes")
     assert reponse.status_code == 200
     corps = reponse.json()
 
@@ -15,8 +15,8 @@ def test_plateformes_serie(client, tmdb_faux):
     assert tmdb_faux.compteurs["plateformes"] == 1
 
 
-def test_plateformes_pays_sans_offre(client):
-    reponse = client.get(f"/series/{REF_SERIE}/plateformes", params={"pays": "jp"})
+def test_plateformes_pays_sans_offre(client_connecte):
+    reponse = client_connecte.get(f"/series/{REF_SERIE}/plateformes", params={"pays": "jp"})
     assert reponse.status_code == 200
     corps = reponse.json()
 
@@ -25,14 +25,14 @@ def test_plateformes_pays_sans_offre(client):
     assert corps["lien"] is None
 
 
-def test_plateformes_film(client, tmdb_faux):
-    reponse = client.get(f"/films/{REF_FILM}/plateformes")
+def test_plateformes_film(client_connecte, tmdb_faux):
+    reponse = client_connecte.get(f"/films/{REF_FILM}/plateformes")
     assert reponse.status_code == 200
     assert reponse.json()["abonnement"][0]["nom"] == "Netflix"
 
 
-def test_similaires_serie(client, tmdb_faux):
-    reponse = client.get(f"/series/{REF_SERIE}/similaires")
+def test_similaires_serie(client_connecte, tmdb_faux):
+    reponse = client_connecte.get(f"/series/{REF_SERIE}/similaires")
     assert reponse.status_code == 200
     resultats = reponse.json()
 
@@ -42,8 +42,8 @@ def test_similaires_serie(client, tmdb_faux):
     assert tmdb_faux.compteurs["similaires"] == 1
 
 
-def test_similaires_film(client):
-    reponse = client.get(f"/films/{REF_FILM}/similaires")
+def test_similaires_film(client_connecte):
+    reponse = client_connecte.get(f"/films/{REF_FILM}/similaires")
     assert reponse.status_code == 200
     resultats = reponse.json()
 
@@ -87,3 +87,20 @@ def test_bande_annonce_absente(client, jeton, tmdb_faux):
 
 def test_bande_annonce_exige_authentification(client):
     assert client.get(f"/films/{REF_FILM}/bande-annonce").status_code == 401
+
+
+def test_catalogue_ferme_aux_anonymes(client):
+    """Les routes de catalogue ne servent que l'app, toujours authentifiée :
+    les laisser ouvertes offrait le cache TMDB à qui passait par Postman."""
+    for chemin in (
+        "/search?q=chroniques",
+        "/search/tendances",
+        "/search/nouveautes?type=serie",
+        f"/series/{REF_SERIE}",
+        f"/series/{REF_SERIE}/similaires",
+        f"/series/{REF_SERIE}/plateformes",
+        f"/films/{REF_FILM}",
+        f"/films/{REF_FILM}/similaires",
+        f"/films/{REF_FILM}/plateformes",
+    ):
+        assert client.get(chemin).status_code == 401, chemin

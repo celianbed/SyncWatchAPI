@@ -67,6 +67,7 @@ async def rechercher(
     request: Request,
     q: str = Query(min_length=1, max_length=100,
                    description="Titre de série ou de film"),
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
     tmdb: ClientTMDB = Depends(client_tmdb),
     cache: Cache = Depends(cache_partage),
 ):
@@ -103,6 +104,7 @@ def rechercher_utilisateurs(
 @limiteur.limit(LIMITE_RECHERCHE)
 async def tendances(
     request: Request,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
     tmdb: ClientTMDB = Depends(client_tmdb),
     cache: Cache = Depends(cache_partage),
 ):
@@ -118,6 +120,7 @@ async def nouveautes(
     request: Request,
     type: Literal["serie", "film"] = Query(
         description="serie = à l'antenne cette semaine, film = en salles"),
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
     tmdb: ClientTMDB = Depends(client_tmdb),
     cache: Cache = Depends(cache_partage),
 ):

@@ -31,6 +31,7 @@ def _suivi_ou_404(db: Session, utilisateur: Utilisateur, reference_tmdb: int) ->
 @router.get("/{reference_tmdb}", response_model=SeriePublique)
 async def fiche_serie(
     reference_tmdb: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
     db: Session = Depends(get_db),
     tmdb: ClientTMDB = Depends(client_tmdb),
 ):
@@ -149,7 +150,9 @@ def progression_abonnements(
 
 @router.get("/{reference_tmdb}/similaires", response_model=list[ResultatRecherche])
 async def series_similaires(
-    reference_tmdb: int, tmdb: ClientTMDB = Depends(client_tmdb)
+    reference_tmdb: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    tmdb: ClientTMDB = Depends(client_tmdb),
 ):
     """Recommandations TMDB pour cette série — rangée « Titres similaires »."""
     return await recommandations(tmdb, "tv", "serie", reference_tmdb)
@@ -158,6 +161,7 @@ async def series_similaires(
 @router.get("/{reference_tmdb}/plateformes", response_model=PlateformesVisionnage)
 async def series_plateformes(
     reference_tmdb: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
     pays: str = Query(default="FR", min_length=2, max_length=2),
     tmdb: ClientTMDB = Depends(client_tmdb),
 ):

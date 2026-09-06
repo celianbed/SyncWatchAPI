@@ -149,3 +149,14 @@ def jeton(client, inscrire):
         "username": DONNEES_INSCRIPTION["pseudo"],
         "password": DONNEES_INSCRIPTION["mot_de_passe"]})
     return reponse.json()["access_token"]
+
+
+@pytest.fixture()
+def client_connecte(client, jeton):
+    """Client dont chaque requête porte le jeton.
+
+    Les routes de catalogue (recherche, fiches, plateformes, similaires) ne
+    sont plus publiques : elles ne servent que l'app, toujours authentifiée.
+    """
+    client.headers["Authorization"] = f"Bearer {jeton}"
+    return client

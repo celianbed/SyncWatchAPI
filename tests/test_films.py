@@ -9,8 +9,8 @@ def _entete(jeton):
     return {"Authorization": f"Bearer {jeton}"}
 
 
-def test_fiche_film(client):
-    reponse = client.get(f"/films/{REF_FILM}")
+def test_fiche_film(client_connecte):
+    reponse = client_connecte.get(f"/films/{REF_FILM}")
     assert reponse.status_code == 200
     corps = reponse.json()
     assert corps["titre"] == "Le Grand Film"
@@ -19,14 +19,14 @@ def test_fiche_film(client):
     assert {g["libelle"] for g in corps["genres"]} == {"Drame"}
 
 
-def test_fiche_film_servie_du_cache(client, tmdb_faux):
-    client.get(f"/films/{REF_FILM}")
-    client.get(f"/films/{REF_FILM}")
+def test_fiche_film_servie_du_cache(client_connecte, tmdb_faux):
+    client_connecte.get(f"/films/{REF_FILM}")
+    client_connecte.get(f"/films/{REF_FILM}")
     assert tmdb_faux.compteurs["get_film"] == 1
 
 
-def test_fiche_film_inconnu(client):
-    assert client.get("/films/999999").status_code == 404
+def test_fiche_film_inconnu(client_connecte):
+    assert client_connecte.get("/films/999999").status_code == 404
 
 
 def test_suivre_film(client, jeton):
