@@ -21,7 +21,7 @@ def _annee(date_str: str | None) -> int | None:
     return int(date_str[:4]) if date_str and len(date_str) >= 4 else None
 
 
-def _candidats_youtube(videos: list[dict]) -> list[str]:
+def candidats_youtube(videos: list[dict]) -> list[str]:
     """Clés YouTube d'un titre, classées par pertinence : Trailer > Teaser > Clip,
     officiel d'abord, VF avant VO. Doublons et vidéos non-YouTube écartés."""
     candidats = [v for v in videos if v.get("site") == "YouTube" and v.get("key")]
@@ -75,7 +75,7 @@ async def _titre_avec_candidats(
     base = _base_titre(brut)
     if base is None:
         return None
-    candidats = _candidats_youtube(await tmdb.videos(base.pop("_media"),
+    candidats = candidats_youtube(await tmdb.videos(base.pop("_media"),
                                                      base["reference_tmdb"]))
     if not candidats:
         return None

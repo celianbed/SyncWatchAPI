@@ -16,3 +16,13 @@ class ExtraitFeed(BaseModel):
     annee: int | None = None
     note_moyenne: float | None = None
     cle_youtube: str  # identifiant de la vidéo YouTube (bande-annonce)
+
+
+class BandeAnnonce(BaseModel):
+    """Meilleure bande-annonce YouTube d'un titre, pour le bouton de la fiche.
+
+    Même classement que le feed « Extraits » : Trailer avant Teaser, officiel
+    avant amateur, VF avant VO.
+    """
+
+    cle_youtube: str

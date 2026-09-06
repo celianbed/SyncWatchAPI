@@ -9,10 +9,11 @@ from db.database import get_db
 from models import Film, SuivreFilm, Utilisateur, VisionnerFilm
 from schemas.film import FilmPublic
 from schemas.plateformes import PlateformesVisionnage
+from schemas.decouverte import BandeAnnonce
 from schemas.recherche import ResultatRecherche
 from schemas.suivi import SuiviFilmCreation, SuiviFilmPublic
 from schemas.visionnage import EtatVisionnageFilm, FilmVu
-from services import catalogue_service
+from services import catalogue_service, decouverte_service
 from services.tmdb_client import ClientTMDB
 
 router = APIRouter()
@@ -148,3 +149,22 @@ async def films_plateformes(
     """Où regarder ce film (JustWatch via TMDB, attribution requise)."""
     return PlateformesVisionnage.depuis_tmdb(
         await tmdb.plateformes("movie", reference_tmdb), pays.upper())
+
+
+@router.get("/{reference_tmdb}/bande-annonce", response_model=BandeAnnonce)
+async def films_bande_annonce(
+    reference_tmdb: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    tmdb: ClientTMDB = Depends(client_tmdb),
+):
+    """Meilleure bande-annonce YouTube — 404 si le titre n'en a aucune.
+
+    Réutilise le classement du feed « Extraits » (Trailer > Teaser > Clip,
+    officiel d'abord, VF avant VO) pour que les deux montrent la même vidéo.
+    """
+    cles = decouverte_service.candidats_youtube(
+        await tmdb.videos("movie", reference_tmdb))
+    if not cles:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            "Aucune bande-annonce disponible.")
+    return BandeAnnonce(cle_youtube=cles[0])

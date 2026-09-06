@@ -34,8 +34,8 @@ def test_candidats_classent_et_ignorent_non_youtube():
         {"site": "YouTube", "key": "y2", "type": "Trailer", "official": True},
     ]
     # Trailer officiel (y2) avant Clip (y1) ; Vimeo exclu
-    assert decouverte_service._candidats_youtube(videos) == ["y2", "y1"]
-    assert decouverte_service._candidats_youtube([]) == []
+    assert decouverte_service.candidats_youtube(videos) == ["y2", "y1"]
+    assert decouverte_service.candidats_youtube([]) == []
 
 
 def test_parser_integrables_ne_garde_que_public_et_embeddable():

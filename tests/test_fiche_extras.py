@@ -50,3 +50,40 @@ def test_similaires_film(client):
     assert len(resultats) == 1
     assert resultats[0]["type"] == "film"
     assert resultats[0]["titre"] == "Le Film Suivant"
+
+
+def _entete(jeton):
+    return {"Authorization": f"Bearer {jeton}"}
+
+
+def test_bande_annonce_serie(client, jeton):
+    reponse = client.get(f"/series/{REF_SERIE}/bande-annonce", headers=_entete(jeton))
+    assert reponse.status_code == 200
+    assert reponse.json()["cle_youtube"]
+
+
+def test_bande_annonce_film(client, jeton):
+    reponse = client.get(f"/films/{REF_FILM}/bande-annonce", headers=_entete(jeton))
+    assert reponse.status_code == 200
+    assert reponse.json()["cle_youtube"]
+
+
+def test_bande_annonce_prend_la_vf_officielle(client, jeton):
+    # même classement que le feed : Trailer > Teaser, officiel d'abord, VF avant VO
+    corps = client.get(f"/series/{REF_SERIE}/bande-annonce",
+                       headers=_entete(jeton)).json()
+    assert corps["cle_youtube"] == "cle_fr"
+
+
+def test_bande_annonce_absente(client, jeton, tmdb_faux):
+    # un titre sans vidéo ne doit pas afficher un bouton qui ne mène nulle part
+    async def aucune(media, tmdb_id):
+        return []
+
+    tmdb_faux.videos = aucune
+    reponse = client.get(f"/films/{REF_FILM}/bande-annonce", headers=_entete(jeton))
+    assert reponse.status_code == 404
+
+
+def test_bande_annonce_exige_authentification(client):
+    assert client.get(f"/films/{REF_FILM}/bande-annonce").status_code == 401
