@@ -1,12 +1,13 @@
 # services/catalogue_service.py — cache catalogue : upsert à la demande depuis TMDB
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from core.config import settings
-from models import Episode, Film, Genre, Saison, Serie, categoriser_film, categoriser_serie
+from models import (Acteur, CastingFilm, CastingSerie, Episode, Film, Genre,
+                    Saison, Serie, categoriser_film, categoriser_serie)
 from services.tmdb_client import ClientTMDB
 
 
@@ -42,8 +43,44 @@ def upsert_serie(db: Session, donnees: dict) -> Serie:
     id_serie = db.scalar(requete)
 
     _associer_genres(db, categoriser_serie, "id_serie", id_serie, donnees.get("genres", []))
+    _associer_casting(db, CastingSerie, "id_serie", id_serie, donnees.get("credits"))
     db.commit()
     return db.get(Serie, id_serie)
+
+
+# On ne garde que les têtes d'affiche : au-delà, TMDB descend vers des rôles
+# d'une réplique, sans intérêt pour la fiche ni pour le croisement « déjà vu ».
+TETES_D_AFFICHE = 12
+
+
+def _associer_casting(db: Session, table, colonne_cible: str, id_cible: int,
+                      credits: dict | None) -> None:
+    """Enregistre la distribution d'un titre, si TMDB l'a jointe à la fiche.
+
+    Sans `append_to_response=credits`, `credits` est absent : on ne touche
+    alors à rien, plutôt que d'effacer une distribution déjà connue.
+    """
+    if not credits:
+        return
+    distribution = sorted(
+        (p for p in credits.get("cast", []) if p.get("id") and p.get("name")),
+        key=lambda p: p.get("order", 999))[:TETES_D_AFFICHE]
+    if not distribution:
+        return
+
+    db.execute(insert(Acteur).values([
+        {"id_acteur": p["id"], "nom": p["name"], "photo": p.get("profile_path")}
+        for p in distribution
+    ]).on_conflict_do_nothing(index_elements=["id_acteur"]))
+
+    # la distribution d'un titre peut changer (personnages renommés, ordre
+    # revu) : on remplace plutôt que d'accumuler.
+    db.execute(delete(table).where(getattr(table, colonne_cible) == id_cible))
+    db.execute(insert(table).values([
+        {colonne_cible: id_cible, "id_acteur": p["id"],
+         "personnage": (p.get("character") or None), "ordre": p.get("order", 0)}
+        for p in distribution
+    ]))
 
 
 def _associer_genres(db: Session, table_association, colonne_cible: str,
@@ -77,6 +114,7 @@ def upsert_film(db: Session, donnees: dict) -> Film:
     id_film = db.scalar(requete)
 
     _associer_genres(db, categoriser_film, "id_film", id_film, donnees.get("genres", []))
+    _associer_casting(db, CastingFilm, "id_film", id_film, donnees.get("credits"))
     db.commit()
     return db.get(Film, id_film)
 
@@ -86,7 +124,7 @@ async def obtenir_film(db: Session, tmdb: ClientTMDB, reference_tmdb: int) -> Fi
     film = db.scalar(select(Film).where(Film.reference_tmdb == reference_tmdb))
     if film is not None and _est_frais(db, film.date_maj_cache):
         return film
-    donnees = await tmdb.get_film(reference_tmdb)
+    donnees = await tmdb.get_film(reference_tmdb, append="credits")
     if donnees is None:
         return film
     return upsert_film(db, donnees)
@@ -100,7 +138,7 @@ async def obtenir_serie(db: Session, tmdb: ClientTMDB, reference_tmdb: int) -> S
     serie = db.scalar(select(Serie).where(Serie.reference_tmdb == reference_tmdb))
     if serie is not None and _est_frais(db, serie.date_maj_cache):
         return serie
-    donnees = await tmdb.get_serie(reference_tmdb)
+    donnees = await tmdb.get_serie(reference_tmdb, append="credits")
     if donnees is None:
         return serie
     return upsert_serie(db, donnees)

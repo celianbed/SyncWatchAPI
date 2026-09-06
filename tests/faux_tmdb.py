@@ -4,6 +4,21 @@ from collections import Counter
 
 REF_SERIE = 4901
 
+# Une actrice joue dans les deux titres : c'est ce chevauchement qui permet de
+# tester le croisement « vous l'avez déjà vue dans N autres titres ».
+CREDITS_SERIE = {"cast": [
+    {"id": 11, "name": "Alba Rivas", "profile_path": "/alba.jpg",
+     "character": "Nora", "order": 0},
+    {"id": 12, "name": "Jasper Roy", "profile_path": None,
+     "character": "Le Veilleur", "order": 1},
+]}
+CREDITS_FILM = {"cast": [
+    {"id": 11, "name": "Alba Rivas", "profile_path": "/alba.jpg",
+     "character": "Elle-même", "order": 0},
+    {"id": 13, "name": "Milo Fontaine", "profile_path": None,
+     "character": "Le Passeur", "order": 1},
+]}
+
 SERIE_DETAIL = {
     "id": REF_SERIE,
     "name": "Les Chroniques",
@@ -170,7 +185,12 @@ class FauxClientTMDB:
 
     async def get_serie(self, tmdb_id, append=None):
         self.compteurs["get_serie"] += 1
-        return copy.deepcopy(SERIE_DETAIL) if tmdb_id == REF_SERIE else None
+        if tmdb_id != REF_SERIE:
+            return None
+        fiche = copy.deepcopy(SERIE_DETAIL)
+        if append and "credits" in append:
+            fiche["credits"] = copy.deepcopy(CREDITS_SERIE)
+        return fiche
 
     async def get_saison(self, tmdb_id, num_saison):
         self.compteurs["get_saison"] += 1
@@ -178,6 +198,11 @@ class FauxClientTMDB:
             return None
         return copy.deepcopy(SAISONS.get(num_saison))
 
-    async def get_film(self, tmdb_id):
+    async def get_film(self, tmdb_id, append=None):
         self.compteurs["get_film"] += 1
-        return copy.deepcopy(FILM_DETAIL) if tmdb_id == REF_FILM else None
+        if tmdb_id != REF_FILM:
+            return None
+        fiche = copy.deepcopy(FILM_DETAIL)
+        if append and "credits" in append:
+            fiche["credits"] = copy.deepcopy(CREDITS_FILM)
+        return fiche

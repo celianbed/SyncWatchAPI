@@ -7,6 +7,7 @@ from models.suivi import SuivreSerie, VisionnerEpisode, SuivreFilm, VisionnerFil
 from models.avis import Avis
 from models.notification import Appareil, Notification
 from models.abonnement import Abonnement
+from models.casting import Acteur, CastingFilm, CastingSerie
 
 __all__ = [
     "Utilisateur",
@@ -17,4 +18,5 @@ __all__ = [
     "Avis",
     "Appareil", "Notification",
     "Abonnement",
+    "Acteur", "CastingSerie", "CastingFilm",
 ]

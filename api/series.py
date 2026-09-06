@@ -8,12 +8,14 @@ from api.dependances import client_tmdb, utilisateur_courant
 from db.database import get_db
 from models import Episode, Saison, SuivreSerie, Utilisateur, VisionnerEpisode
 from schemas.plateformes import PlateformesVisionnage
+from schemas.casting import MembreCasting
 from schemas.decouverte import BandeAnnonce
 from schemas.recherche import ResultatRecherche
 from schemas.serie import SaisonAvecEpisodes, SeriePublique
 from schemas.social import ProgressionAmi
 from schemas.suivi import SuiviCreation, SuiviMaj, SuiviPublic
-from services import catalogue_service, decouverte_service, social_service
+from services import (casting_service, catalogue_service, decouverte_service,
+                      social_service)
 from services.tmdb_client import ClientTMDB
 
 router = APIRouter()
@@ -187,3 +189,16 @@ async def series_bande_annonce(
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             "Aucune bande-annonce disponible.")
     return BandeAnnonce(cle_youtube=cles[0])
+
+
+@router.get("/{reference_tmdb}/casting", response_model=list[MembreCasting])
+def casting_serie(
+    reference_tmdb: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Têtes d'affiche, chacune portant le nombre d'autres titres déjà vus où
+    elle joue — la liste seule est dans TMDB, ce croisement n'est qu'ici."""
+    serie = serie_ou_404(db, reference_tmdb, "Série absente du cache.")
+    return casting_service.casting(db, utilisateur.id_utilisateur,
+                                   id_serie=serie.id_serie)

@@ -96,5 +96,7 @@ class ClientTMDB:
         """Détail d'une saison, avec tous ses épisodes."""
         return await self._get(f"/tv/{tmdb_id}/season/{num_saison}")
 
-    async def get_film(self, tmdb_id: int) -> dict | None:
-        return await self._get(f"/movie/{tmdb_id}")
+    async def get_film(self, tmdb_id: int, append: str | None = None) -> dict | None:
+        """Fiche film ; `append` = append_to_response pour limiter les allers-retours."""
+        params = {"append_to_response": append} if append else {}
+        return await self._get(f"/movie/{tmdb_id}", **params)
