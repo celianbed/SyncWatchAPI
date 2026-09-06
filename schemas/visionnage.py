@@ -23,10 +23,14 @@ class FilmVu(BaseModel):
 
 
 class EtatVisionnageFilm(BaseModel):
-    """État de visionnage d'un film pour l'utilisateur courant (bouton « Vu »)."""
+    """État d'un film pour l'utilisateur courant : alimente les deux boutons de
+    la fiche, « Vu » et « À voir plus tard »."""
 
     deja_vu: bool
     nombre_visionnages: int
+    # le film est-il en attente dans la liste « À voir » ? Sans cette information,
+    # le bouton ne pouvait ni refléter son état, ni proposer de se rétracter.
+    dans_a_voir: bool = False
 
 
 class ProchainEpisode(BaseModel):

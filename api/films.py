@@ -121,10 +121,14 @@ def etat_visionnage_film(
 ):
     """Le film a-t-il déjà été vu par l'utilisateur courant ? (bouton « Vu » de la fiche)"""
     film = film_par_reference(db, reference_tmdb)
-    if film is None:  # pas encore en cache = jamais vu
+    if film is None:  # pas encore en cache = jamais vu, jamais mis de côté
         return EtatVisionnageFilm(deja_vu=False, nombre_visionnages=0)
     nombre = _nombre_visionnages(db, utilisateur.id_utilisateur, film.id_film)
-    return EtatVisionnageFilm(deja_vu=nombre > 0, nombre_visionnages=nombre)
+    suivi = db.get(SuivreFilm, {"id_utilisateur": utilisateur.id_utilisateur,
+                                "id_film": film.id_film})
+    return EtatVisionnageFilm(
+        deja_vu=nombre > 0, nombre_visionnages=nombre,
+        dans_a_voir=suivi is not None and suivi.statut == "a_voir")
 
 
 @router.get("/{reference_tmdb}/similaires", response_model=list[ResultatRecherche])

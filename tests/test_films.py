@@ -74,15 +74,50 @@ def test_etat_film_pas_vu(client, jeton):
     # film jamais vu (pas encore en cache) → deja_vu false
     reponse = client.get(f"/films/{REF_FILM}/vu", headers=_entete(jeton))
     assert reponse.status_code == 200
-    assert reponse.json() == {"deja_vu": False, "nombre_visionnages": 0}
+    assert reponse.json() == {"deja_vu": False, "nombre_visionnages": 0,
+                              "dans_a_voir": False}
 
 
 def test_etat_film_vu(client, jeton):
     client.post(f"/films/{REF_FILM}/vu", headers=_entete(jeton))
     client.post(f"/films/{REF_FILM}/vu", headers=_entete(jeton))
     reponse = client.get(f"/films/{REF_FILM}/vu", headers=_entete(jeton))
-    assert reponse.json() == {"deja_vu": True, "nombre_visionnages": 2}
+    assert reponse.json() == {"deja_vu": True, "nombre_visionnages": 2,
+                              "dans_a_voir": False}
 
 
 def test_etat_film_sans_jeton(client):
     assert client.get(f"/films/{REF_FILM}/vu").status_code == 401
+
+
+# --- État du bouton « À voir plus tard » ---
+
+def test_etat_signale_le_film_mis_de_cote(client, jeton):
+    """Sans cette information, le bouton ne pouvait pas refléter son état."""
+    avant = client.get(f"/films/{REF_FILM}/vu", headers=_entete(jeton)).json()
+    assert avant["dans_a_voir"] is False
+
+    client.post(f"/films/{REF_FILM}/suivre", headers=_entete(jeton),
+                json={"statut": "a_voir"})
+    apres = client.get(f"/films/{REF_FILM}/vu", headers=_entete(jeton)).json()
+    assert apres["dans_a_voir"] is True
+
+
+def test_retirer_de_la_liste_remet_le_bouton_a_zero(client, jeton):
+    """Un clic malencontreux doit pouvoir se défaire."""
+    client.post(f"/films/{REF_FILM}/suivre", headers=_entete(jeton),
+                json={"statut": "a_voir"})
+    assert client.delete(f"/films/{REF_FILM}/suivre",
+                         headers=_entete(jeton)).status_code == 204
+    etat = client.get(f"/films/{REF_FILM}/vu", headers=_entete(jeton)).json()
+    assert etat["dans_a_voir"] is False
+
+
+def test_marquer_vu_sort_le_film_de_la_liste_a_voir(client, jeton):
+    """Un film qu'on vient de voir n'est plus « à voir »."""
+    client.post(f"/films/{REF_FILM}/suivre", headers=_entete(jeton),
+                json={"statut": "a_voir"})
+    client.post(f"/films/{REF_FILM}/vu", headers=_entete(jeton))
+    etat = client.get(f"/films/{REF_FILM}/vu", headers=_entete(jeton)).json()
+    assert etat["deja_vu"] is True
+    assert etat["dans_a_voir"] is False
