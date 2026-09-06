@@ -38,6 +38,10 @@ class EpisodeDansSaison(BaseModel):
     duree: int | None
     date_diffusion: date | None
     vignette: str | None
+    # Vu par l'utilisateur qui demande. Sans ce drapeau, l'app devait déduire la
+    # progression du seul « prochain épisode non vu » : un épisode dé-marqué au
+    # milieu faisait réapparaître tous les suivants comme non vus.
+    vu: bool = False
 
 
 class SaisonAvecEpisodes(BaseModel):

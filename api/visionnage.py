@@ -1,6 +1,6 @@
 # api/visionnage.py — marquage vu/non-vu des épisodes et saisons
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import func, literal, select
+from sqlalchemy import delete, func, literal, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -8,7 +8,7 @@ from api.communs import get_ou_404
 from api.dependances import utilisateur_courant
 from db.database import get_db
 from models import Episode, Saison, Utilisateur, VisionnerEpisode
-from schemas.visionnage import EpisodeVu, SaisonVue
+from schemas.visionnage import EpisodeVu, SaisonNonVue, SaisonVue
 
 router = APIRouter()
 
@@ -64,3 +64,21 @@ def marquer_saison_vue(
         ["id_utilisateur", "id_episode"], diffusees).on_conflict_do_nothing())
     db.commit()
     return SaisonVue(episodes_marques=resultat.rowcount)
+
+
+@router.delete("/saisons/{id_saison}/vu", response_model=SaisonNonVue)
+def retirer_saison_vue(
+    id_saison: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Défait un « tout marquer vu » : la saison entière redevient non vue.
+    Sans cette route, un clic sur « Tout marquer vu » était définitif."""
+    get_ou_404(db, Saison, id_saison, "Saison introuvable.")
+
+    de_la_saison = select(Episode.id_episode).where(Episode.id_saison == id_saison)
+    resultat = db.execute(delete(VisionnerEpisode).where(
+        VisionnerEpisode.id_utilisateur == utilisateur.id_utilisateur,
+        VisionnerEpisode.id_episode.in_(de_la_saison)))
+    db.commit()
+    return SaisonNonVue(episodes_retires=resultat.rowcount)

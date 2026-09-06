@@ -69,12 +69,61 @@ def test_saison_avec_episode_non_diffuse(client, jeton, serie_suivie):
     assert reponse.json()["episodes_marques"] == 1
 
 
-def test_saisons_de_la_serie(client, serie_suivie):
-    reponse = client.get(f"/series/{REF_SERIE}/saisons")
+def test_retirer_saison_vue(client, jeton, serie_suivie):
+    id_saison_1 = serie_suivie["saisons"][0]
+    client.post(f"/saisons/{id_saison_1}/vu", headers=_entete(jeton))
+
+    reponse = client.delete(f"/saisons/{id_saison_1}/vu", headers=_entete(jeton))
+    assert reponse.status_code == 200
+    assert reponse.json()["episodes_retires"] == 2
+
+    # idempotent : re-défaire ne retire plus rien, et n'est pas une erreur
+    reponse = client.delete(f"/saisons/{id_saison_1}/vu", headers=_entete(jeton))
+    assert reponse.json()["episodes_retires"] == 0
+
+    corps = client.get(f"/series/{REF_SERIE}/prochain-episode",
+                       headers=_entete(jeton)).json()
+    assert (corps["num_saison"], corps["num_episode"]) == (1, 1)
+
+
+def test_retirer_saison_vue_ne_touche_pas_les_autres(client, jeton, serie_suivie):
+    saison_1, saison_2 = serie_suivie["saisons"]
+    client.post(f"/saisons/{saison_1}/vu", headers=_entete(jeton))
+    client.post(f"/saisons/{saison_2}/vu", headers=_entete(jeton))
+
+    client.delete(f"/saisons/{saison_2}/vu", headers=_entete(jeton))
+
+    saisons = client.get(f"/series/{REF_SERIE}/saisons", headers=_entete(jeton)).json()
+    assert [e["vu"] for e in saisons[0]["episodes"]] == [True, True]
+    assert [e["vu"] for e in saisons[1]["episodes"]] == [False, False]
+
+
+def test_retirer_saison_inconnue(client, jeton):
+    assert client.delete("/saisons/999999/vu",
+                         headers=_entete(jeton)).status_code == 404
+
+
+def test_saisons_de_la_serie(client, jeton, serie_suivie):
+    reponse = client.get(f"/series/{REF_SERIE}/saisons", headers=_entete(jeton))
     assert reponse.status_code == 200
     saisons = reponse.json()
     assert [s["num_saison"] for s in saisons] == [1, 2]
     assert [e["num_episode"] for e in saisons[0]["episodes"]] == [1, 2]
+    assert all(e["vu"] is False for s in saisons for e in s["episodes"])
+
+
+def test_saisons_portent_l_etat_vu_de_chacun(client, jeton, serie_suivie):
+    # l'app en a besoin pour afficher une progression exacte : la déduction
+    # « tout ce qui précède le prochain épisode est vu » devient fausse dès
+    # qu'un épisode est dé-marqué au milieu.
+    client.post(f"/episodes/{serie_suivie['episodes'][1]}/vu", headers=_entete(jeton))
+
+    saisons = client.get(f"/series/{REF_SERIE}/saisons", headers=_entete(jeton)).json()
+    assert [e["vu"] for e in saisons[0]["episodes"]] == [False, True]
+
+
+def test_saisons_demandent_une_authentification(client, serie_suivie):
+    assert client.get(f"/series/{REF_SERIE}/saisons").status_code == 401
 
 
 def test_prochain_episode(client, jeton, serie_suivie):

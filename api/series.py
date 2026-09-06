@@ -2,10 +2,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from sqlalchemy import select
+
 from api.communs import recommandations, serie_ou_404, serie_par_reference
 from api.dependances import client_tmdb, utilisateur_courant
 from db.database import get_db
-from models import Serie, SuivreSerie, Utilisateur
+from models import Episode, Saison, Serie, SuivreSerie, Utilisateur, VisionnerEpisode
 from schemas.plateformes import PlateformesVisionnage
 from schemas.recherche import ResultatRecherche
 from schemas.serie import SaisonAvecEpisodes, SeriePublique
@@ -107,9 +109,28 @@ def ne_plus_suivre(
 
 
 @router.get("/{reference_tmdb}/saisons", response_model=list[SaisonAvecEpisodes])
-def saisons_serie(reference_tmdb: int, db: Session = Depends(get_db)):
-    """Saisons et épisodes du cache (remplis dès qu'un utilisateur suit la série)."""
-    return serie_ou_404(db, reference_tmdb).saisons
+def saisons_serie(
+    reference_tmdb: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Saisons et épisodes du cache (remplis dès qu'un utilisateur suit la série),
+    chacun marqué `vu` ou non pour l'utilisateur courant — en une seule requête."""
+    serie = serie_ou_404(db, reference_tmdb)
+    vus = set(db.scalars(
+        select(VisionnerEpisode.id_episode)
+        .join(Episode, Episode.id_episode == VisionnerEpisode.id_episode)
+        .join(Saison, Saison.id_saison == Episode.id_saison)
+        .where(Saison.id_serie == serie.id_serie,
+               VisionnerEpisode.id_utilisateur == utilisateur.id_utilisateur)))
+
+    saisons = []
+    for saison in serie.saisons:
+        modele = SaisonAvecEpisodes.model_validate(saison)
+        for episode in modele.episodes:
+            episode.vu = episode.id_episode in vus
+        saisons.append(modele)
+    return saisons
 
 
 @router.get("/{reference_tmdb}/prochain-episode", response_model=ProchainEpisode | None)

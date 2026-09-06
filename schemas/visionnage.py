@@ -16,6 +16,10 @@ class SaisonVue(BaseModel):
     episodes_marques: int
 
 
+class SaisonNonVue(BaseModel):
+    episodes_retires: int
+
+
 class FilmVu(BaseModel):
     id_film: int
     date_visionnage: datetime
