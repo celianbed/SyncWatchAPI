@@ -157,3 +157,29 @@ def envoyer_mail_compte_existant(
     (anti-énumération), c'est ce mail qui prévient le vrai propriétaire."""
     _envoyer_mail(envoyeur, "compte_existant", destinataire, pseudo,
                   construire_lien_reset(jeton), settings.DUREE_JETON_RESET_MINUTES)
+
+
+def envoyer_alerte_signalement(
+    envoyeur: Envoyeur, id_signalement: int, signaleur: str, motif: str,
+    id_avis: int | None, id_vise: int | None, precision: str | None,
+) -> None:
+    """Prévient l'éditeur qu'un contenu est signalé.
+
+    Texte brut et sans lien : ce mail ne s'adresse pas à un utilisateur mais à
+    l'exploitant, qui tranchera depuis la base. La directive 1.2 de l'App Store
+    demande une réponse « en temps voulu » — encore faut-il être au courant.
+    """
+    cible = f"avis #{id_avis}" if id_avis is not None else f"utilisateur #{id_vise}"
+    corps = (
+        f"Signalement #{id_signalement}\n"
+        f"Cible   : {cible}\n"
+        f"Motif   : {motif}\n"
+        f"Signalé par : {signaleur}\n"
+        f"Précision : {precision or '—'}\n"
+    )
+    try:
+        envoyeur.envoyer(settings.MAIL_EXPEDITEUR,
+                         f"[SyncWatch] Signalement {motif} — {cible}",
+                         corps, f"<pre>{html.escape(corps)}</pre>")
+    except Exception:  # noqa: BLE001 — journalisé, jamais propagé
+        journal.exception("Échec de l'alerte de signalement #%s", id_signalement)

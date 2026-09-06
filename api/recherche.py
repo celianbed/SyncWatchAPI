@@ -11,7 +11,7 @@ from db.database import get_db
 from models import Utilisateur
 from schemas.recherche import ResultatRecherche
 from schemas.social import ResumeUtilisateur
-from services import social_service
+from services import moderation_service, social_service
 from services.cache import Cache
 from services.tmdb_client import ClientTMDB
 
@@ -95,6 +95,9 @@ def rechercher_utilisateurs(
         select(Utilisateur).where(
             Utilisateur.pseudo.ilike(f"%{q.strip()}%"),
             Utilisateur.id_utilisateur != utilisateur.id_utilisateur,
+            # un blocage vaut dans les deux sens : ni l'un ni l'autre ne se trouve
+            Utilisateur.id_utilisateur.not_in(
+                moderation_service.ids_masques(db, utilisateur.id_utilisateur)),
             Utilisateur.statut_compte == "actif")
         .order_by(Utilisateur.pseudo).limit(20)).all()
     return social_service.resumes(db, utilisateur.id_utilisateur, list(users))

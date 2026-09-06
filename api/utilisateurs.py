@@ -9,14 +9,15 @@ from core.limitation import LIMITE_INSCRIPTION, limiteur
 from core.securite import (creer_jeton_reset, creer_jeton_verification,
                            hacher_mot_de_passe)
 from db.database import get_db
-from models import (Abonnement, Film, Notification, Serie, SuivreFilm,
+from models import (Abonnement, Blocage, Film, Notification, Serie, SuivreFilm,
                        SuivreSerie, Utilisateur, VisionnerFilm)
 from schemas.recherche import ResultatRecherche
 from schemas.social import (AvisProfil, Compatibilite, ProfilPublic,
                                RecommandationCreation, ResumeUtilisateur)
 from schemas.utilisateur import (UtilisateurCreation, UtilisateurMaj,
                                      UtilisateurPublic)
-from services import catalogue_service, notification_service, social_service
+from services import (catalogue_service, moderation_service, notification_service,
+                      social_service)
 from services.apple_auth import revoquer as revoquer_apple
 from services.tmdb_client import ClientTMDB
 from services.email_service import (Envoyeur, envoyer_mail_compte_existant,
@@ -186,6 +187,18 @@ def _utilisateur_actif_ou_404(db: Session, id_utilisateur: int) -> Utilisateur:
     return cible
 
 
+def _visible_ou_404(db: Session, moi: Utilisateur, id_utilisateur: int) -> Utilisateur:
+    """Comme ci-dessus, mais un blocage rend la personne introuvable.
+
+    Le même 404 que pour un compte inexistant, volontairement : révéler
+    « vous êtes bloqué » renseignerait la personne bloquée.
+    """
+    cible = _utilisateur_actif_ou_404(db, id_utilisateur)
+    if moderation_service.bloque(db, moi.id_utilisateur, id_utilisateur):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Utilisateur introuvable.")
+    return cible
+
+
 @router.post("/{id_utilisateur}/abonner", status_code=status.HTTP_201_CREATED)
 def abonner(
     id_utilisateur: int,
@@ -197,6 +210,9 @@ def abonner(
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "On ne peut pas s'abonner à soi-même.")
     _utilisateur_actif_ou_404(db, id_utilisateur)
+    if moderation_service.bloque(db, utilisateur.id_utilisateur, id_utilisateur):
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "Impossible : un blocage est en place.")
     cle = {"id_suiveur": utilisateur.id_utilisateur, "id_suivi": id_utilisateur}
     if db.get(Abonnement, cle) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Déjà abonné.")
@@ -225,6 +241,49 @@ def se_desabonner(
     db.commit()
 
 
+@router.post("/{id_utilisateur}/bloquer", status_code=status.HTTP_201_CREATED)
+def bloquer(
+    id_utilisateur: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Bloque une personne : elle disparaît de votre vue, et vous de la sienne.
+
+    Exigé par la directive 1.2 de l'App Store. Unilatéral et silencieux — la
+    personne bloquée n'en est pas informée, c'est le principe.
+    """
+    if id_utilisateur == utilisateur.id_utilisateur:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "On ne peut pas se bloquer soi-même.")
+    _utilisateur_actif_ou_404(db, id_utilisateur)
+    moderation_service.bloquer(db, utilisateur.id_utilisateur, id_utilisateur)
+    return {"statut": "bloque"}
+
+
+@router.delete("/{id_utilisateur}/bloquer", status_code=status.HTTP_204_NO_CONTENT)
+def debloquer(
+    id_utilisateur: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Retire le blocage. Les abonnements rompus ne sont pas rétablis."""
+    moderation_service.debloquer(db, utilisateur.id_utilisateur, id_utilisateur)
+
+
+@router.get("/moi/blocages", response_model=list[ResumeUtilisateur])
+def mes_blocages(
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Les personnes que j'ai bloquées — sans quoi le blocage serait sans retour."""
+    bloques = db.scalars(
+        select(Utilisateur)
+        .join(Blocage, Blocage.id_bloque == Utilisateur.id_utilisateur)
+        .where(Blocage.id_bloqueur == utilisateur.id_utilisateur)
+        .order_by(Utilisateur.pseudo)).all()
+    return social_service.resumes(db, utilisateur.id_utilisateur, list(bloques))
+
+
 @router.get("/{id_utilisateur}/abonnes", response_model=list[ResumeUtilisateur])
 def abonnes(
     id_utilisateur: int,
@@ -236,7 +295,9 @@ def abonnes(
     users = db.scalars(
         select(Utilisateur)
         .join(Abonnement, Abonnement.id_suiveur == Utilisateur.id_utilisateur)
-        .where(Abonnement.id_suivi == id_utilisateur)
+        .where(Abonnement.id_suivi == id_utilisateur,
+               Utilisateur.id_utilisateur.not_in(
+                   moderation_service.ids_masques(db, utilisateur.id_utilisateur)))
         .order_by(Abonnement.date_abonnement.desc())).all()
     return social_service.resumes(db, utilisateur.id_utilisateur, list(users))
 
@@ -252,7 +313,9 @@ def abonnements(
     users = db.scalars(
         select(Utilisateur)
         .join(Abonnement, Abonnement.id_suivi == Utilisateur.id_utilisateur)
-        .where(Abonnement.id_suiveur == id_utilisateur)
+        .where(Abonnement.id_suiveur == id_utilisateur,
+               Utilisateur.id_utilisateur.not_in(
+                   moderation_service.ids_masques(db, utilisateur.id_utilisateur)))
         .order_by(Abonnement.date_abonnement.desc())).all()
     return social_service.resumes(db, utilisateur.id_utilisateur, list(users))
 
@@ -349,5 +412,5 @@ def lire(
     db: Session = Depends(get_db),
 ):
     """Profil public détaillé (compteurs + relation) — jamais l'adresse mail."""
-    cible = _utilisateur_actif_ou_404(db, id_utilisateur)
+    cible = _visible_ou_404(db, utilisateur, id_utilisateur)
     return social_service.profil_detaille(db, utilisateur.id_utilisateur, cible)

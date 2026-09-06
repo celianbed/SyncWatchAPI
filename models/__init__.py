@@ -8,6 +8,7 @@ from models.avis import Avis
 from models.notification import Appareil, Notification
 from models.abonnement import Abonnement
 from models.casting import Acteur, CastingFilm, CastingSerie
+from models.moderation import Blocage, Signalement
 
 __all__ = [
     "Utilisateur",
@@ -19,4 +20,5 @@ __all__ = [
     "Appareil", "Notification",
     "Abonnement",
     "Acteur", "CastingSerie", "CastingFilm",
+    "Blocage", "Signalement",
 ]

@@ -5,12 +5,27 @@ from sqlalchemy.orm import Session
 
 from api.communs import du_proprietaire_ou_404, get_ou_404
 from api.dependances import utilisateur_courant
+from core.moderation_texte import contient_propos_interdits
+from services import moderation_service
 from db.database import get_db
 from models import (Abonnement, Avis, Episode, Film, Saison, Serie,
                     Utilisateur, VisionnerEpisode)
 from schemas.avis import AvisCreation, AvisMaj, AvisPublic
 
 router = APIRouter()
+
+
+def _refuser_propos_interdits(commentaire: str | None) -> None:
+    """Filtrage lexical exigé par la directive 1.2 de l'App Store.
+
+    Refuser à la publication plutôt que masquer après coup : rien n'est écrit,
+    donc rien n'est à modérer. Le filtre est volontairement étroit — il ne
+    remplace ni le signalement ni le blocage, qui restent le vrai dispositif.
+    """
+    if contient_propos_interdits(commentaire):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Ce commentaire contient des propos que nous n'acceptons pas.")
 
 
 def _verifier_cible(db: Session, donnees: AvisCreation) -> None:
@@ -31,6 +46,7 @@ def creer_avis(
     db: Session = Depends(get_db),
 ):
     _verifier_cible(db, donnees)
+    _refuser_propos_interdits(donnees.commentaire)
     avis = Avis(id_utilisateur=utilisateur.id_utilisateur, **donnees.model_dump())
     db.add(avis)
     db.commit()
@@ -81,9 +97,15 @@ def avis_de_mes_abonnements(
     nom, valeur = _cible_unique(id_serie, id_film, id_episode)
     suivis = select(Abonnement.id_suivi).where(
         Abonnement.id_suiveur == utilisateur.id_utilisateur)
+    masques = moderation_service.ids_masques(db, utilisateur.id_utilisateur)
+    # un avis signalé disparaît aussitôt pour celui qui l'a signalé : pas de
+    # jugement à rendre, et la promesse « vous ne le reverrez plus » est tenue
+    signales = moderation_service.avis_signales_par(db, utilisateur.id_utilisateur)
     avis = db.scalars(
         select(Avis).where(getattr(Avis, nom) == valeur,
-                           Avis.id_utilisateur.in_(suivis))
+                           Avis.id_utilisateur.in_(suivis),
+                           Avis.id_utilisateur.not_in(masques),
+                           Avis.id_avis.not_in(signales))
         .order_by(Avis.date_creation.desc())).all()
 
     if id_serie is None:
@@ -144,6 +166,7 @@ def modifier_avis(
     db: Session = Depends(get_db),
 ):
     avis = du_proprietaire_ou_404(db, Avis, id_avis, utilisateur, "Avis introuvable.")
+    _refuser_propos_interdits(donnees.commentaire)
     for champ in donnees.model_fields_set:  # null explicite = effacer le champ
         setattr(avis, champ, getattr(donnees, champ))
     if avis.note is None and not (avis.commentaire or "").strip():
