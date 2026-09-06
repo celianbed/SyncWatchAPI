@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import Depends, FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from api import (accueil, activite, auth, avis, calendrier, decouverte, films,
                      utilisateurs, visionnage)
 from core.config import SECRET_KEY_PAR_DEFAUT, settings
 from core.limitation import brancher_limitation
+from core.validation import gestionnaire_erreurs_validation
 
 # Suivi d'erreurs : à initialiser AVANT la création de l'app (sinon inactif).
 if settings.SENTRY_DSN:
@@ -76,6 +78,9 @@ app.add_middleware(
 
 # Limitation de débit : renvoie 429 au-delà des quotas (cf. core/limitation.py)
 brancher_limitation(app)
+
+# 422 : une phrase française dans `detail`, pas la liste technique par défaut.
+app.add_exception_handler(RequestValidationError, gestionnaire_erreurs_validation)
 
 
 @app.api_route("/", methods=["GET", "HEAD"], tags=["sante"])
