@@ -2,7 +2,7 @@
 import pytest
 from sqlalchemy import func, select
 
-from models import Appareil, Episode
+from models import Appareil, Episode, Notification, Utilisateur
 from services import notification_service
 from tests.faux_tmdb import REF_SERIE
 
@@ -256,3 +256,26 @@ def test_serie_en_pause_nest_pas_notifiee(client, jeton, db, diffusion_du_jour):
     """Une mise en pause est un retrait volontaire, qu'on respecte."""
     _statut(client, jeton, "en_pause")
     assert notification_service.scanner_diffusions_du_jour(db) == 0
+
+
+def test_sans_appareil_la_notification_existe_quand_meme(client, db, jeton, inscrire, caplog):
+    """Un push impossible ne doit pas empêcher la notification, ni rester muet.
+
+    Le cas s'était produit en production : un abonnement renvoyait 201 et plus
+    rien n'apparaissait dans les logs — impossible de savoir si le push était
+    parti, alors que la table `appareil` était simplement vide.
+    """
+    import logging
+
+    inscrire(pseudo="bob", adresse_mail="bob@example.com")
+    id_bob = db.scalar(select(Utilisateur.id_utilisateur).where(
+        Utilisateur.pseudo == "bob"))
+
+    with caplog.at_level(logging.INFO):
+        reponse = client.post(f"/utilisateurs/{id_bob}/abonner",
+                              headers=_entete(jeton))
+
+    assert reponse.status_code == 201
+    assert db.scalar(select(func.count()).select_from(Notification).where(
+        Notification.id_utilisateur == id_bob)) == 1
+    assert "aucun appareil enregistré" in caplog.text

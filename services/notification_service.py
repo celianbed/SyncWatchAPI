@@ -130,11 +130,17 @@ def notifier(db: Session, id_destinataire: int, type_: str, contenu: str, *,
 
     jetons = db.scalars(select(Appareil.jeton_notif).where(
         Appareil.id_utilisateur == id_destinataire)).all()
-    if jetons:
-        _purger_jetons(db, (pousseur or pousseur_par_defaut()).envoyer(
-            list(jetons), "SyncWatch", contenu[:255], donnees or {},
-            badge=_non_lues(db, id_destinataire)))
-        db.commit()
+    if not jetons:
+        # sans cette trace, un push absent était indiscernable d'un push
+        # envoyé : la fonction sortait sans rien dire.
+        journal.info("Push ignoré : aucun appareil enregistré pour l'utilisateur %d",
+                     id_destinataire)
+        return notif
+
+    _purger_jetons(db, (pousseur or pousseur_par_defaut()).envoyer(
+        list(jetons), "SyncWatch", contenu[:255], donnees or {},
+        badge=_non_lues(db, id_destinataire)))
+    db.commit()
     return notif
 
 
