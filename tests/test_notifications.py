@@ -207,3 +207,52 @@ def test_cible_resolue_pour_toute_la_liste(client, jeton, db, diffusion_du_jour)
     assert len(avec_cible) == 1
     assert avec_cible[0]["cible"] == "serie"
     assert all(n["cible"] is None for n in notifs if n["reference_tmdb"] is None)
+
+
+# --- Séries terminées : une nouvelle saison doit les réveiller ---
+
+def _statut(client, jeton, statut):
+    client.patch(f"/series/{REF_SERIE}/suivre", headers=_entete(jeton),
+                 json={"statut_suivi": statut})
+
+
+def test_serie_terminee_notifiee_et_remise_en_cours(client, jeton, db,
+                                                    diffusion_du_jour):
+    """Une série finie ne l'est plus quand un épisode sort : sans ça, l'utilisateur
+    n'apprenait jamais l'arrivée d'une nouvelle saison."""
+    _statut(client, jeton, "terminee")
+
+    assert notification_service.scanner_diffusions_du_jour(db) == 1
+
+    notifs = client.get("/notifications", headers=_entete(jeton)).json()
+    assert any(n["type"] == "nouvel_episode" for n in notifs)
+
+    from models import Serie, SuivreSerie
+    statut = db.scalar(
+        select(SuivreSerie.statut_suivi)
+        .join(Serie, Serie.id_serie == SuivreSerie.id_serie)
+        .where(Serie.reference_tmdb == REF_SERIE))
+    assert statut == "en_cours"
+
+
+def test_serie_terminee_remonte_dans_l_accueil_apres_notification(
+        client, jeton, db, diffusion_du_jour):
+    """La notification doit mener quelque part : « terminée » est exclu de l'accueil."""
+    _statut(client, jeton, "terminee")
+    assert client.get("/accueil", headers=_entete(jeton)).json() == []
+
+    notification_service.scanner_diffusions_du_jour(db)
+
+    assert len(client.get("/accueil", headers=_entete(jeton)).json()) == 1
+
+
+def test_serie_abandonnee_reste_silencieuse(client, jeton, db, diffusion_du_jour):
+    """Un abandon est explicite : on ne revient pas dessus."""
+    _statut(client, jeton, "abandonnee")
+    assert notification_service.scanner_diffusions_du_jour(db) == 0
+
+
+def test_serie_en_pause_nest_pas_notifiee(client, jeton, db, diffusion_du_jour):
+    """Une mise en pause est un retrait volontaire, qu'on respecte."""
+    _statut(client, jeton, "en_pause")
+    assert notification_service.scanner_diffusions_du_jour(db) == 0

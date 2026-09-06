@@ -11,9 +11,17 @@ from db.database import SessionLocal
 from models import Appareil, Episode, Notification, Saison, Serie, SuivreSerie
 from services import catalogue_service
 from services.tmdb_client import ClientTMDB
-from services.visionnage_service import STATUTS_ACTIFS
 
 journal = logging.getLogger(__name__)
+
+# Une série « terminée » ne l'est que jusqu'à la saison suivante : sans elle ici,
+# son cache ne serait plus jamais rafraîchi et l'app n'apprendrait jamais qu'un
+# nouvel épisode existe. Seul « abandonnée » est exclu — un abandon est explicite.
+STATUTS_A_RESYNCHRONISER = ("a_voir", "en_cours", "terminee", "en_pause")
+
+# Notifications de diffusion : « terminée » redevient d'actualité dès qu'un
+# épisode sort, alors qu'« en pause » est un retrait volontaire qu'on respecte.
+STATUTS_NOTIFIES = ("a_voir", "en_cours", "terminee")
 
 
 class Pousseur(Protocol):
@@ -136,16 +144,17 @@ def scanner_diffusions_du_jour(db: Session, pousseur: Pousseur | None = None) ->
     Idempotent : relancer le scan le même jour ne crée pas de doublon.
     """
     lignes = db.execute(
-        select(Episode, Saison.num_saison, Serie, SuivreSerie.id_utilisateur)
+        select(Episode, Saison.num_saison, Serie, SuivreSerie)
         .join(Saison, Episode.id_saison == Saison.id_saison)
         .join(Serie, Saison.id_serie == Serie.id_serie)
         .join(SuivreSerie, and_(
             SuivreSerie.id_serie == Serie.id_serie,
-            SuivreSerie.statut_suivi.in_(STATUTS_ACTIFS)))
+            SuivreSerie.statut_suivi.in_(STATUTS_NOTIFIES)))
         .where(Episode.date_diffusion == func.current_date())).all()
 
     creees = 0
-    for episode, num_saison, serie, id_utilisateur in lignes:
+    for episode, num_saison, serie, suivi in lignes:
+        id_utilisateur = suivi.id_utilisateur
         deja = db.scalar(select(Notification.id_notification).where(
             Notification.id_utilisateur == id_utilisateur,
             Notification.id_episode == episode.id_episode,
@@ -159,6 +168,12 @@ def scanner_diffusions_du_jour(db: Session, pousseur: Pousseur | None = None) ->
         db.add(Notification(id_utilisateur=id_utilisateur, id_episode=episode.id_episode,
                             type="nouvel_episode", contenu=contenu[:255]))
         creees += 1
+
+        # « terminée » vient de cesser d'être vrai : on repasse la série en cours,
+        # sinon elle ne remonterait pas dans « À regarder ce soir » et la
+        # notification n'aurait nulle part où mener.
+        if suivi.statut_suivi == "terminee":
+            suivi.statut_suivi = "en_cours"
 
         if pousseur is not None:
             jetons = db.scalars(select(Appareil.jeton_notif).where(
@@ -176,7 +191,7 @@ def scanner_diffusions_du_jour(db: Session, pousseur: Pousseur | None = None) ->
 
 
 async def resynchroniser_series_suivies(db: Session, tmdb: ClientTMDB) -> int:
-    """Rafraîchit depuis TMDB les séries suivies actives (fiche + saisons + épisodes).
+    """Rafraîchit depuis TMDB les séries suivies (fiche + saisons + épisodes).
 
     Sans cette resynchronisation, le cache d'une série que personne ne consulte
     vieillit et le scan des diffusions ne voit jamais les nouveaux épisodes.
@@ -184,7 +199,7 @@ async def resynchroniser_series_suivies(db: Session, tmdb: ClientTMDB) -> int:
     series = db.scalars(
         select(Serie)
         .join(SuivreSerie, and_(SuivreSerie.id_serie == Serie.id_serie,
-                                SuivreSerie.statut_suivi.in_(STATUTS_ACTIFS)))
+                                SuivreSerie.statut_suivi.in_(STATUTS_A_RESYNCHRONISER)))
         .distinct()).all()
 
     for serie in series:
