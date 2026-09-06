@@ -118,11 +118,37 @@ async def _cles_integrables(cles: list[str]) -> set[str]:
     return integrables
 
 
-async def feed_extraits(tmdb: ClientTMDB, cache: Cache, page: int = 1) -> list[dict]:
-    """Une page de bandes-annonces intégrables des titres en tendance (avec cache).
+# En dessous de ce nombre d'extraits, on va chercher la page suivante : écarter
+# les titres déjà suivis peut vider une page, et un feed vide n'a rien à montrer.
+MINIMUM_PAR_PAGE = 5
+PAGES_MAX_PARCOURUES = 3
 
-    Alimente le feed infini : l'app demande page 1, 2, 3… puis reboucle.
+
+async def feed_extraits(tmdb: ClientTMDB, cache: Cache, page: int = 1,
+                        deja_suivis: set[tuple[str, int]] | None = None) -> list[dict]:
+    """Bandes-annonces intégrables des titres en tendance, à partir de `page`.
+
+    `deja_suivis` — (type, référence TMDB) — est écarté : un feed de découverte
+    qui propose ce qu'on suit déjà rate sa cible. Le filtrage a lieu après la
+    lecture du cache, qui reste donc partagé entre tous les utilisateurs.
     """
+    retenus: list[dict] = []
+    for decalage in range(PAGES_MAX_PARCOURUES):
+        bruts = await _page_brute(tmdb, cache, page + decalage)
+        if not bruts:
+            break
+        retenus += [
+            item for item in bruts
+            if not deja_suivis
+            or (item["type"], item["reference_tmdb"]) not in deja_suivis
+        ]
+        if len(retenus) >= MINIMUM_PAR_PAGE:
+            break
+    return retenus
+
+
+async def _page_brute(tmdb: ClientTMDB, cache: Cache, page: int) -> list[dict]:
+    """Une page de tendances, sans filtrage — mise en cache telle quelle."""
     cle_cache = f"extraits:{page}"
     items = await cache.lire(cle_cache)
     if items is not None:

@@ -45,3 +45,40 @@ def test_parser_integrables_ne_garde_que_public_et_embeddable():
         {"id": "c", "status": {"embeddable": True, "privacyStatus": "unlisted"}},
     ]
     assert decouverte_service._parser_integrables(items) == {"a"}
+
+
+def _entete(jeton):
+    return {"Authorization": f"Bearer {jeton}"}
+
+
+def test_le_feed_ecarte_ce_qu_on_suit_deja(client, jeton):
+    """Un feed de découverte qui propose une série déjà suivie rate sa cible."""
+    avant = client.get("/decouverte/extraits", headers=_entete(jeton)).json()
+    refs_avant = {(e["type"], e["reference_tmdb"]) for e in avant}
+    assert ("serie", REF_SERIE) in refs_avant
+
+    client.post(f"/series/{REF_SERIE}/suivre", headers=_entete(jeton))
+
+    apres = client.get("/decouverte/extraits", headers=_entete(jeton)).json()
+    refs_apres = {(e["type"], e["reference_tmdb"]) for e in apres}
+    assert ("serie", REF_SERIE) not in refs_apres
+
+
+def test_le_filtrage_ne_vide_pas_le_cache_partage(client, jeton, inscrire, db):
+    """Le filtrage a lieu après lecture du cache : ce que je suis ne doit pas
+    disparaître du feed des autres."""
+    from models import Utilisateur
+    from sqlalchemy import select
+
+    client.post(f"/series/{REF_SERIE}/suivre", headers=_entete(jeton))
+    inscrire(pseudo="bob", adresse_mail="bob@example.com")
+    jeton_bob = client.post("/auth/connexion",
+                            data={"username": "bob", "password": "motdepasse123"}
+                            ).json()["access_token"]
+    assert db.scalar(select(Utilisateur.id_utilisateur).where(
+        Utilisateur.pseudo == "bob")) is not None
+
+    refs = {(e["type"], e["reference_tmdb"])
+            for e in client.get("/decouverte/extraits",
+                                headers=_entete(jeton_bob)).json()}
+    assert ("serie", REF_SERIE) in refs
