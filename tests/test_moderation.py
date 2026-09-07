@@ -61,14 +61,40 @@ class TestBlocage:
         assert client.get(f"/utilisateurs/{id_moi}",
                           headers=_h(jeton_bob)).status_code == 404
 
-    def test_impossible_de_s_abonner_malgre_un_blocage(
+    def test_celui_qui_a_bloque_recoit_une_explication(
             self, client, db, jeton, inscrire):
+        # il sait qu'il a posé le blocage : on peut le lui dire
+        id_bob, _ = _bob(client, db, inscrire)
+        client.post(f"/utilisateurs/{id_bob}/bloquer", headers=_h(jeton))
+
+        reponse = client.post(f"/utilisateurs/{id_bob}/abonner", headers=_h(jeton))
+        assert reponse.status_code == 403
+        assert "Débloque" in reponse.json()["detail"]
+
+    def test_celui_qui_est_bloque_ne_l_apprend_pas(
+            self, client, db, jeton, inscrire):
+        """Un 403 explicite confirmerait le blocage à qui n'est pas censé le
+        savoir : c'est le même 404 qu'un compte inexistant."""
         id_bob, jeton_bob = _bob(client, db, inscrire)
         id_moi = _id(db, "celian")
         client.post(f"/utilisateurs/{id_bob}/bloquer", headers=_h(jeton))
 
         assert client.post(f"/utilisateurs/{id_moi}/abonner",
-                           headers=_h(jeton_bob)).status_code == 403
+                           headers=_h(jeton_bob)).status_code == 404
+
+    def test_aucune_sous_route_du_profil_ne_fuit(
+            self, client, db, jeton, inscrire):
+        """Le point que mes premiers tests ne couvraient pas : ils vérifiaient
+        les sites que je connaissais, pas ceux que j'avais oubliés."""
+        id_bob, jeton_bob = _bob(client, db, inscrire)
+        id_moi = _id(db, "celian")
+        client.post(f"/utilisateurs/{id_bob}/bloquer", headers=_h(jeton))
+
+        for chemin in ("", "/avis", "/series-suivies", "/compatibilite",
+                       "/abonnes", "/abonnements"):
+            reponse = client.get(f"/utilisateurs/{id_moi}{chemin}",
+                                 headers=_h(jeton_bob))
+            assert reponse.status_code == 404, chemin
 
     def test_les_avis_d_une_personne_bloquee_disparaissent(
             self, client, db, jeton, inscrire):
@@ -203,3 +229,19 @@ class TestFiltreLexical:
         reponse = client.patch(f"/avis/{avis['id_avis']}", headers=_h(jeton),
                                json={"commentaire": "quel c0nnard"})
         assert reponse.status_code == 422
+
+
+def test_signaler_deux_fois_la_meme_cible_est_refuse(client, db, jeton, inscrire):
+    """Sans ça, un compte pouvait empiler les signalements et autant de mails
+    vers l'éditeur — le compteur qu'on refuse comme sanction se retournait
+    contre celui qui doit trancher."""
+    inscrire(pseudo="bob", adresse_mail="bob@example.com")
+    id_bob = _id(db, "bob")
+
+    premier = client.post("/signalements", headers=_h(jeton),
+                          json={"id_vise": id_bob, "motif": "spam"})
+    assert premier.status_code == 201
+
+    second = client.post("/signalements", headers=_h(jeton),
+                         json={"id_vise": id_bob, "motif": "spam"})
+    assert second.status_code == 409

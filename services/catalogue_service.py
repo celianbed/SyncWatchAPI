@@ -62,16 +62,33 @@ def _associer_casting(db: Session, table, colonne_cible: str, id_cible: int,
     """
     if not credits:
         return
-    distribution = sorted(
+    classes = sorted(
         (p for p in credits.get("cast", []) if p.get("id") and p.get("name")),
-        key=lambda p: p.get("order", 999))[:TETES_D_AFFICHE]
+        key=lambda p: p.get("order", 999))
+    # TMDB liste la même personne plusieurs fois quand elle tient deux rôles
+    # (jumeaux, anthologie, doublage d'animation) : sans déduplication, la
+    # clé primaire (titre, acteur) est violée et toute la mise en cache échoue.
+    # On garde la première occurrence, celle dont l'`order` est le meilleur.
+    vus: set[int] = set()
+    distribution = []
+    for p in classes:
+        if p["id"] not in vus:
+            vus.add(p["id"])
+            distribution.append(p)
+        if len(distribution) == TETES_D_AFFICHE:
+            break
     if not distribution:
         return
 
     db.execute(insert(Acteur).values([
         {"id_acteur": p["id"], "nom": p["name"], "photo": p.get("profile_path")}
         for p in distribution
-    ]).on_conflict_do_nothing(index_elements=["id_acteur"]))
+    ]).on_conflict_do_update(
+        index_elements=["id_acteur"],
+        # sans quoi un nom corrigé chez TMDB (mariage, orthographe) resterait
+        # figé à sa première insertion, contrairement aux fiches série et film
+        set_={"nom": insert(Acteur).excluded.nom,
+              "photo": insert(Acteur).excluded.photo}))
 
     # la distribution d'un titre peut changer (personnages renommés, ordre
     # revu) : on remplace plutôt que d'accumuler.

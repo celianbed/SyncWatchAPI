@@ -41,6 +41,12 @@ def signaler(
                                 "On ne se signale pas soi-même.")
         get_ou_404(db, Utilisateur, donnees.id_vise, "Utilisateur introuvable.")
 
+    if moderation_service.deja_signale(db, utilisateur.id_utilisateur,
+                                       id_avis=donnees.id_avis,
+                                       id_vise=donnees.id_vise):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Tu as déjà signalé ce contenu.")
+
     signalement = Signalement(
         id_signaleur=utilisateur.id_utilisateur,
         id_avis=donnees.id_avis,

@@ -123,7 +123,10 @@ def _masquer_les_plus_avances(
         select(VisionnerEpisode.id_utilisateur, func.count())
         .join(Episode, Episode.id_episode == VisionnerEpisode.id_episode)
         .join(Saison, Saison.id_saison == Episode.id_saison)
-        .where(Saison.id_serie == id_serie)
+        # saison 0 exclue : les spéciaux, webisodes et making-of se regardent
+        # hors du fil narratif. Les compter fausse la progression dans les deux
+        # sens — et c'est déjà la règle dans visionnage_service et social_service.
+        .where(Saison.id_serie == id_serie, Saison.num_saison > 0)
         .group_by(VisionnerEpisode.id_utilisateur)).all())
     les_miens = vus.get(utilisateur.id_utilisateur, 0)
 

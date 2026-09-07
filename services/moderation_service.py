@@ -28,6 +28,18 @@ def bloque(db: Session, id_utilisateur: int, id_autre: int) -> bool:
         )).limit(1)) is not None
 
 
+def j_ai_bloque(db: Session, id_bloqueur: int, id_bloque: int) -> bool:
+    """Ai-je posé ce blocage ? Distinct de `bloque()`, qui est symétrique.
+
+    La nuance est nécessaire pour répondre sans trahir : à qui a bloqué, on
+    peut dire « vous avez bloqué cette personne » ; à qui est bloqué, il faut
+    servir le même 404 qu'un compte inexistant.
+    """
+    return db.scalar(select(Blocage.id_bloqueur).where(
+        Blocage.id_bloqueur == id_bloqueur,
+        Blocage.id_bloque == id_bloque)) is not None
+
+
 def bloquer(db: Session, id_bloqueur: int, id_bloque: int) -> None:
     """Pose le blocage et rompt les abonnements dans les deux sens.
 
@@ -50,6 +62,20 @@ def debloquer(db: Session, id_bloqueur: int, id_bloque: int) -> None:
     db.execute(delete(Blocage).where(Blocage.id_bloqueur == id_bloqueur,
                                      Blocage.id_bloque == id_bloque))
     db.commit()
+
+
+def deja_signale(db: Session, id_signaleur: int, *, id_avis: int | None = None,
+                 id_vise: int | None = None) -> bool:
+    """Cette personne a-t-elle déjà signalé cette cible ?
+
+    Sans cette vérification, un même compte pouvait empiler les signalements
+    et autant de mails vers l'éditeur : le compteur qu'on refuse d'utiliser
+    comme sanction se retournait contre celui qui doit trancher.
+    """
+    condition = (Signalement.id_avis == id_avis if id_avis is not None
+                 else Signalement.id_vise == id_vise)
+    return db.scalar(select(Signalement.id_signalement).where(
+        Signalement.id_signaleur == id_signaleur, condition)) is not None
 
 
 def signalements_de(db: Session, id_utilisateur: int) -> list[Signalement]:

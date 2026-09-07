@@ -92,3 +92,40 @@ def test_la_distribution_est_remplacee_et_non_accumulee(client, db, jeton):
     casting = client.get(f"/series/{REF_SERIE}/casting", headers=_h(jeton)).json()
     assert len(casting) == 2
     assert id_serie is not None
+
+
+def test_un_acteur_en_double_ne_fait_pas_tout_echouer(client, db, jeton):
+    """TMDB liste la même personne deux fois quand elle tient deux rôles
+    (jumeaux, anthologie, doublage). Sans déduplication, la clé primaire
+    (titre, acteur) était violée et TOUTE la mise en cache échouait — donc
+    la fiche, le suivi, et le scan quotidien."""
+    from services import catalogue_service
+    from tests.faux_tmdb import SERIE_DETAIL
+
+    credits_doublon = {"cast": [
+        {"id": 11, "name": "Alba Rivas", "profile_path": "/alba.jpg",
+         "character": "Alice", "order": 0},
+        {"id": 11, "name": "Alba Rivas", "profile_path": "/alba.jpg",
+         "character": "Beth", "order": 1},
+    ]}
+    serie = catalogue_service.upsert_serie(
+        db, {**SERIE_DETAIL, "credits": credits_doublon})
+
+    casting = client.get(f"/series/{REF_SERIE}/casting", headers=_h(jeton)).json()
+    assert len(casting) == 1
+    assert casting[0]["personnage"] == "Alice", "on garde le meilleur ordre"
+    assert serie is not None
+
+
+def test_un_nom_corrige_chez_tmdb_est_repris(client, db, jeton):
+    # sinon la fiche servirait indéfiniment l'ancien nom, sans moyen de le
+    # mettre à jour autrement qu'en SQL
+    from services import catalogue_service
+    from tests.faux_tmdb import CREDITS_SERIE, SERIE_DETAIL
+
+    catalogue_service.upsert_serie(db, {**SERIE_DETAIL, "credits": CREDITS_SERIE})
+    renomme = {"cast": [{**CREDITS_SERIE["cast"][0], "name": "Alba Rivas-Marchetti"}]}
+    catalogue_service.upsert_serie(db, {**SERIE_DETAIL, "credits": renomme})
+
+    casting = client.get(f"/series/{REF_SERIE}/casting", headers=_h(jeton)).json()
+    assert casting[0]["nom"] == "Alba Rivas-Marchetti"

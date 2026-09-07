@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from models import (Abonnement, Avis, Episode, Film, Saison, Serie,
                        SuivreFilm, SuivreSerie, Utilisateur, VisionnerEpisode,
                        VisionnerFilm)
+from services import moderation_service
 
 
 def _comptes_par_user(db: Session, colonne_user, ids: list[int]) -> dict[int, int]:
@@ -235,10 +236,15 @@ def fil_activite(db: Session, uid: int, limite: int = 40) -> list[dict]:
 def profil_detaille(db: Session, uid_courant: int, cible: Utilisateur) -> dict:
     """Profil public détaillé (compteurs abonnés/abonnements/séries + relation)."""
     cid = cible.id_utilisateur
+    # mêmes exclusions que les listes servies par /abonnes et /abonnements :
+    # sinon l'en-tête annonce « 5 abonnés » au-dessus d'une liste de quatre.
+    masques = moderation_service.ids_masques(db, uid_courant)
     nb_abonnes = db.scalar(select(func.count()).select_from(Abonnement)
-                           .where(Abonnement.id_suivi == cid))
+                           .where(Abonnement.id_suivi == cid,
+                                  Abonnement.id_suiveur.not_in(masques)))
     nb_abonnements = db.scalar(select(func.count()).select_from(Abonnement)
-                               .where(Abonnement.id_suiveur == cid))
+                               .where(Abonnement.id_suiveur == cid,
+                                      Abonnement.id_suivi.not_in(masques)))
     nb_series = db.scalar(select(func.count()).select_from(SuivreSerie)
                           .where(SuivreSerie.id_utilisateur == cid))
     est_abonne = db.get(

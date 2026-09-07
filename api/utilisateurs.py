@@ -210,9 +210,13 @@ def abonner(
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "On ne peut pas s'abonner à soi-même.")
     _utilisateur_actif_ou_404(db, id_utilisateur)
-    if moderation_service.bloque(db, utilisateur.id_utilisateur, id_utilisateur):
+    if moderation_service.j_ai_bloque(db, utilisateur.id_utilisateur, id_utilisateur):
         raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            "Impossible : un blocage est en place.")
+                            "Débloque cette personne pour pouvoir la suivre.")
+    if moderation_service.bloque(db, utilisateur.id_utilisateur, id_utilisateur):
+        # bloqué par l'autre : même 404 qu'un compte inexistant, sinon le 403
+        # confirmerait le blocage à qui n'est pas censé le savoir
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Utilisateur introuvable.")
     cle = {"id_suiveur": utilisateur.id_utilisateur, "id_suivi": id_utilisateur}
     if db.get(Abonnement, cle) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Déjà abonné.")
@@ -291,7 +295,7 @@ def abonnes(
     db: Session = Depends(get_db),
 ):
     """Les utilisateurs qui suivent {id_utilisateur}."""
-    _utilisateur_actif_ou_404(db, id_utilisateur)
+    _visible_ou_404(db, utilisateur, id_utilisateur)
     users = db.scalars(
         select(Utilisateur)
         .join(Abonnement, Abonnement.id_suiveur == Utilisateur.id_utilisateur)
@@ -309,7 +313,7 @@ def abonnements(
     db: Session = Depends(get_db),
 ):
     """Les utilisateurs que {id_utilisateur} suit."""
-    _utilisateur_actif_ou_404(db, id_utilisateur)
+    _visible_ou_404(db, utilisateur, id_utilisateur)
     users = db.scalars(
         select(Utilisateur)
         .join(Abonnement, Abonnement.id_suivi == Utilisateur.id_utilisateur)
@@ -323,10 +327,11 @@ def abonnements(
 @router.get("/{id_utilisateur}/series-suivies", response_model=list[ResultatRecherche])
 def series_suivies(
     id_utilisateur: int,
-    _: Utilisateur = Depends(utilisateur_courant),
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
     db: Session = Depends(get_db),
 ):
     """Séries suivies par un utilisateur (carrousel du profil public)."""
+    _visible_ou_404(db, utilisateur, id_utilisateur)
     series = db.scalars(
         select(Serie).join(SuivreSerie, SuivreSerie.id_serie == Serie.id_serie)
         .where(SuivreSerie.id_utilisateur == id_utilisateur)
@@ -337,10 +342,11 @@ def series_suivies(
 @router.get("/{id_utilisateur}/avis", response_model=list[AvisProfil])
 def avis_utilisateur(
     id_utilisateur: int,
-    _: Utilisateur = Depends(utilisateur_courant),
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
     db: Session = Depends(get_db),
 ):
     """Derniers avis (titre + note) d'un utilisateur — section du profil public."""
+    _visible_ou_404(db, utilisateur, id_utilisateur)
     return social_service.avis_profil(db, id_utilisateur)
 
 
@@ -351,7 +357,7 @@ def compatibilite(
     db: Session = Depends(get_db),
 ):
     """Compatibilité de goûts entre l'utilisateur courant et {id_utilisateur}."""
-    _utilisateur_actif_ou_404(db, id_utilisateur)
+    _visible_ou_404(db, utilisateur, id_utilisateur)
     return social_service.compatibilite(db, utilisateur.id_utilisateur, id_utilisateur)
 
 
