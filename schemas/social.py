@@ -64,5 +64,6 @@ class ProfilPublic(BaseModel):
     nb_abonnes: int
     nb_abonnements: int
     nb_series: int
+    nb_films: int
     est_abonne: bool
     me_suit: bool

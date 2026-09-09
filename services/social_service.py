@@ -8,6 +8,24 @@ from models import (Abonnement, Avis, Episode, Film, Saison, Serie,
 from services import moderation_service
 
 
+def _films_vus_par_user(db: Session, ids: list[int]) -> dict[int, int]:
+    """{id_utilisateur: nombre de films VUS} — distincts, un revisionnage ne
+    compte pas deux fois.
+
+    Compter les lignes `suivre_film` incluait les films seulement mis de côté
+    dans « à voir » : « 2 films » pouvait désigner deux titres jamais regardés,
+    alors que l'étiquette en promet des films vus.
+    """
+    if not ids:
+        return {}
+    lignes = db.execute(
+        select(VisionnerFilm.id_utilisateur,
+               func.count(func.distinct(VisionnerFilm.id_film)))
+        .where(VisionnerFilm.id_utilisateur.in_(ids))
+        .group_by(VisionnerFilm.id_utilisateur)).all()
+    return {uid: n for uid, n in lignes}
+
+
 def _comptes_par_user(db: Session, colonne_user, ids: list[int]) -> dict[int, int]:
     """{id_utilisateur: nombre de lignes} pour les utilisateurs `ids` (en un appel)."""
     if not ids:
@@ -22,7 +40,7 @@ def resumes(db: Session, uid_courant: int, users: list[Utilisateur]) -> list[dic
     """ResumeUtilisateur (compteurs + relation) pour une liste — sans N+1."""
     ids = [u.id_utilisateur for u in users]
     nb_series = _comptes_par_user(db, SuivreSerie.id_utilisateur, ids)
-    nb_films = _comptes_par_user(db, SuivreFilm.id_utilisateur, ids)
+    nb_films = _films_vus_par_user(db, ids)
     # qui je suis / qui me suit, parmi ces utilisateurs
     je_suis = set(db.scalars(select(Abonnement.id_suivi).where(
         Abonnement.id_suiveur == uid_courant, Abonnement.id_suivi.in_(ids))).all())
@@ -245,6 +263,7 @@ def profil_detaille(db: Session, uid_courant: int, cible: Utilisateur) -> dict:
     nb_abonnements = db.scalar(select(func.count()).select_from(Abonnement)
                                .where(Abonnement.id_suiveur == cid,
                                       Abonnement.id_suivi.not_in(masques)))
+    nb_films = _films_vus_par_user(db, [cid]).get(cid, 0)
     nb_series = db.scalar(select(func.count()).select_from(SuivreSerie)
                           .where(SuivreSerie.id_utilisateur == cid))
     est_abonne = db.get(
@@ -259,6 +278,7 @@ def profil_detaille(db: Session, uid_courant: int, cible: Utilisateur) -> dict:
         "nb_abonnes": nb_abonnes,
         "nb_abonnements": nb_abonnements,
         "nb_series": nb_series,
+        "nb_films": nb_films,
         "est_abonne": est_abonne,
         "me_suit": me_suit,
     }

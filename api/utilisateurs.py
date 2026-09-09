@@ -339,6 +339,29 @@ def series_suivies(
     return [ResultatRecherche.depuis_serie(s) for s in series]
 
 
+@router.get("/{id_utilisateur}/films-vus", response_model=list[ResultatRecherche])
+def films_vus_utilisateur(
+    id_utilisateur: int,
+    utilisateur: Utilisateur = Depends(utilisateur_courant),
+    db: Session = Depends(get_db),
+):
+    """Films vus par un utilisateur (carrousel du profil public).
+
+    Son absence rendait le profil incohérent : la recherche annonçait « 2
+    films », et la fiche n'offrait aucun moyen de les voir.
+    """
+    _visible_ou_404(db, utilisateur, id_utilisateur)
+    dernier = (
+        select(VisionnerFilm.id_film,
+               func.max(VisionnerFilm.date_visionnage).label("dernier"))
+        .where(VisionnerFilm.id_utilisateur == id_utilisateur)
+        .group_by(VisionnerFilm.id_film).subquery())
+    films = db.scalars(
+        select(Film).join(dernier, Film.id_film == dernier.c.id_film)
+        .order_by(dernier.c.dernier.desc()).limit(30)).all()
+    return [ResultatRecherche.depuis_film(f) for f in films]
+
+
 @router.get("/{id_utilisateur}/avis", response_model=list[AvisProfil])
 def avis_utilisateur(
     id_utilisateur: int,

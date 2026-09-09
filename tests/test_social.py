@@ -276,3 +276,58 @@ def test_le_plafond_est_par_destinataire(client, db, jeton, inscrire):
     r = client.post(f"/utilisateurs/{id_claire}/recommander", headers=_h(jeton),
                     json={"reference_tmdb": REF_SERIE, "type": "serie"})
     assert r.status_code == 201
+
+
+def test_films_vus_d_un_autre_utilisateur(client, db, jeton, inscrire):
+    """La recherche annonçait « N films » et le profil n'offrait aucun moyen
+    de les voir : la route n'existait que pour soi-même."""
+    from tests.faux_tmdb import REF_FILM
+
+    inscrire(pseudo="bob", adresse_mail="bob@example.com")
+    id_bob, jeton_bob = _id(db, "bob"), _jeton_de(client, "bob")
+    client.get(f"/films/{REF_FILM}", headers=_h(jeton_bob))
+    client.post(f"/films/{REF_FILM}/vu", headers=_h(jeton_bob))
+
+    films = client.get(f"/utilisateurs/{id_bob}/films-vus", headers=_h(jeton)).json()
+    assert [f["titre"] for f in films] == ["Le Grand Film"]
+
+
+def test_le_compte_de_films_ne_retient_que_les_vus(client, db, jeton, inscrire):
+    """Compter les lignes suivre_film incluait les films seulement mis en
+    « à voir » : « 2 films » pouvait désigner deux titres jamais regardés."""
+    from tests.faux_tmdb import REF_FILM
+
+    inscrire(pseudo="bob", adresse_mail="bob@example.com")
+    id_bob, jeton_bob = _id(db, "bob"), _jeton_de(client, "bob")
+    client.get(f"/films/{REF_FILM}", headers=_h(jeton_bob))
+    client.post(f"/films/{REF_FILM}/suivre", headers=_h(jeton_bob),
+                json={"statut": "a_voir"})
+
+    profil = client.get(f"/utilisateurs/{id_bob}", headers=_h(jeton)).json()
+    assert profil["nb_films"] == 0, "mis de côté n'est pas vu"
+
+    client.post(f"/films/{REF_FILM}/vu", headers=_h(jeton_bob))
+    profil = client.get(f"/utilisateurs/{id_bob}", headers=_h(jeton)).json()
+    assert profil["nb_films"] == 1
+
+
+def test_un_revisionnage_ne_compte_pas_deux_fois(client, db, jeton, inscrire):
+    from tests.faux_tmdb import REF_FILM
+
+    inscrire(pseudo="bob", adresse_mail="bob@example.com")
+    id_bob, jeton_bob = _id(db, "bob"), _jeton_de(client, "bob")
+    client.get(f"/films/{REF_FILM}", headers=_h(jeton_bob))
+    client.post(f"/films/{REF_FILM}/vu", headers=_h(jeton_bob))
+    client.post(f"/films/{REF_FILM}/vu", headers=_h(jeton_bob))
+
+    profil = client.get(f"/utilisateurs/{id_bob}", headers=_h(jeton)).json()
+    assert profil["nb_films"] == 1
+
+
+def test_films_vus_masques_par_un_blocage(client, db, jeton, inscrire):
+    inscrire(pseudo="bob", adresse_mail="bob@example.com")
+    id_bob = _id(db, "bob")
+    client.post(f"/utilisateurs/{id_bob}/bloquer", headers=_h(jeton))
+
+    assert client.get(f"/utilisateurs/{id_bob}/films-vus",
+                      headers=_h(jeton)).status_code == 404
