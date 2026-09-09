@@ -4,6 +4,9 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+LONGUEUR_COMMENTAIRE = 2000
+
+
 class AvisCreation(BaseModel):
     # arc exclusif : exactement une des trois cibles (validé ci-dessous,
     # en miroir du CHECK chk_avis_cible en base)
@@ -11,7 +14,10 @@ class AvisCreation(BaseModel):
     id_film: int | None = None
     id_episode: int | None = None
     note: int | None = Field(default=None, ge=1, le=10)
-    commentaire: str | None = None
+    # Borné : la colonne est un Text sans limite, et rien n'empêchait de
+    # déposer plusieurs mégaoctets. 2 000 signes laissent largement de quoi
+    # dire ce qu'on pense d'une série.
+    commentaire: str | None = Field(default=None, max_length=LONGUEUR_COMMENTAIRE)
 
     @model_validator(mode="after")
     def verifier_regles(self):
@@ -27,7 +33,7 @@ class AvisMaj(BaseModel):
     """PATCH : seuls les champs fournis changent ; null explicite efface le champ."""
 
     note: int | None = Field(default=None, ge=1, le=10)
-    commentaire: str | None = None
+    commentaire: str | None = Field(default=None, max_length=LONGUEUR_COMMENTAIRE)
 
 
 class AuteurAvis(BaseModel):

@@ -245,3 +245,20 @@ def test_avis_de_film_jamais_masque(client, jeton, jeton2, duo):
                       params={"id_film": duo["id_film"]}).json()
     assert avis[0]["masque"] is False
     assert avis[0]["commentaire"] == "Excellent."
+
+
+def test_commentaire_trop_long_refuse(client, jeton, cibles):
+    # la colonne est un Text sans limite : sans borne au schéma, rien
+    # n'empêchait de déposer plusieurs mégaoctets
+    reponse = client.post("/avis", headers=_entete(jeton),
+                          json={"id_serie": cibles["id_serie"],
+                                "commentaire": "a" * 2001})
+    assert reponse.status_code == 422
+    assert "2000" in reponse.json()["detail"]
+
+
+def test_commentaire_a_la_limite_accepte(client, jeton, cibles):
+    reponse = client.post("/avis", headers=_entete(jeton),
+                          json={"id_serie": cibles["id_serie"],
+                                "commentaire": "a" * 2000})
+    assert reponse.status_code == 201
